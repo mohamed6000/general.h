@@ -164,10 +164,10 @@ typedef double float64;
 typedef uintptr_t umm;
 typedef intptr_t  smm;
 
-typedef s64 b64;  // For consistency.
-typedef s32 b32;
-typedef s16 b16;  // For consistency.
-typedef s8  b8;   // For consistency.
+typedef u64 b64;  // For consistency.
+typedef u32 b32;
+typedef u16 b16;  // For consistency.
+typedef u8  b8;   // For consistency.
 
 #if LANGUAGE_CPP
 #define null 0
@@ -206,6 +206,15 @@ typedef s8  b8;   // For consistency.
 #define size_of(x) sizeof(x)
 #define offset_of_member(Type, member) (umm)&(((Type *)null)->member)
 #define array_count(a) (size_of(a) / size_of((a)[0]))
+
+#define align_forward_offset(s, a) (((s) & ((a)-1)) ? ((a) - ((s) & ((a)-1))) : 0)
+#define align_forward(s, a) (((s) + ((a)-1)) & ~((a)-1))
+
+#define align_forward_pointer(p, a) ((u8 *)(((umm)(p) + ((a)-1)) & ~((a)-1)))
+
+
+// Assuming the input is non-zero.
+#define is_power_of_2(x) (((x) & ((x)-1)) == 0)
 
 #if COMPILER_CL
 #define UNUSED(x) (void)(x)
