@@ -204,7 +204,7 @@ typedef u8  b8;   // For consistency.
 #endif
 
 #define size_of(x) sizeof(x)
-#define offset_of_member(Type, member) (umm)&(((Type *)null)->member)
+#define offset_of(Type, member) (umm)&(((Type *)null)->member)
 #define array_count(a) (size_of(a) / size_of((a)[0]))
 
 #define align_forward_offset(s, a) (((s) & ((a)-1)) ? ((a) - ((s) & ((a)-1))) : 0)
@@ -249,6 +249,8 @@ typedef u8  b8;   // For consistency.
     #define debug_break() __builtin_trap()
 #elif COMPILER_CL
     #define debug_break() __debugbreak()
+#elif COMPILER_CLANG
+    #define debug_break() __builtin_trap()
 #else
     #if ARCH_X64
         #define debug_break() *((int *)null) = 0
@@ -307,29 +309,29 @@ struct ExitScopeHelp {
 #if LANGUAGE_C
 #include <stdbool.h>
 
-#define static_assert(c) typedef char CONCAT(static_assertion,__LINE__)[(c)?1:-1]
+#define static_assert(c, m) typedef char CONCAT(static_assertion,__LINE__)[(c)?1:-1]
 #endif
 
-static_assert(size_of(s8)  == 1);
-static_assert(size_of(s16) == 2);
-static_assert(size_of(s32) == 4);
-static_assert(size_of(s64) == 8);
+static_assert(size_of(s8)  == 1, "size_of(s8)  == 1");
+static_assert(size_of(s16) == 2, "size_of(s16) == 2");
+static_assert(size_of(s32) == 4, "size_of(s32) == 4");
+static_assert(size_of(s64) == 8, "size_of(s64) == 8");
 
-static_assert(size_of(u8)  == 1);
-static_assert(size_of(u16) == 2);
-static_assert(size_of(u32) == 4);
-static_assert(size_of(u64) == 8);
+static_assert(size_of(u8)  == 1, "size_of(u8)  == 1");
+static_assert(size_of(u16) == 2, "size_of(u16) == 2");
+static_assert(size_of(u32) == 4, "size_of(u32) == 4");
+static_assert(size_of(u64) == 8, "size_of(u64) == 8");
 
-static_assert(size_of(float32) == 4);
-static_assert(size_of(float64) == 8);
+static_assert(size_of(float32) == 4, "size_of(float32) == 4");
+static_assert(size_of(float64) == 8, "size_of(float64) == 8");
 
-static_assert(size_of(umm) == size_of(void *));
-static_assert(size_of(smm) == size_of(void *));
+static_assert(size_of(umm) == size_of(void *), "size_of(umm) == size_of(void *)");
+static_assert(size_of(smm) == size_of(void *), "size_of(smm) == size_of(void *)");
 
-static_assert(size_of(b8)  == 1);
-static_assert(size_of(b16) == 2);
-static_assert(size_of(b32) == 4);
-static_assert(size_of(b64) == 8);
+static_assert(size_of(b8)  == 1, "size_of(b8)  == 1");
+static_assert(size_of(b16) == 2, "size_of(b16) == 2");
+static_assert(size_of(b32) == 4, "size_of(b32) == 4");
+static_assert(size_of(b64) == 8, "size_of(b64) == 8");
 
 /******** Min/Max type size ********/
 
