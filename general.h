@@ -145,8 +145,14 @@
 #endif
 
 
+#if COMPILER_CL
+#include <intrin.h>
+#endif
+
+
 /******** Primitives ********/
 #include <stdint.h>
+#include <stddef.h>
 
 typedef int8_t   s8;
 typedef int16_t  s16;
@@ -169,6 +175,7 @@ typedef u32 b32;
 typedef u16 b16;  // For consistency.
 typedef u8  b8;   // For consistency.
 
+
 #if LANGUAGE_CPP
 #define null 0
 #define TINYRT_EXTERN extern "C"
@@ -190,6 +197,8 @@ typedef u8  b8;   // For consistency.
     #define SHARED_EXPORT __declspec(dllexport)
     #elif COMPILER_CLANG
     #define SHARED_EXPORT __declspec(dllexport)
+    #elif COMPILER_GCC
+    #define SHARED_EXPORT __declspec(dllexport)
     #else
     #error Undefined SHARED_EXPORT for this compiler
     #endif
@@ -204,7 +213,7 @@ typedef u8  b8;   // For consistency.
 #endif
 
 #define size_of(x) sizeof(x)
-#define offset_of(Type, member) (umm)&(((Type *)null)->member)
+#define offset_of(Type, member) (umm)&(((Type *)0)->member)
 #define array_count(a) (size_of(a) / size_of((a)[0]))
 
 #define align_forward_offset(s, a) (((s) & ((a)-1)) ? ((a) - ((s) & ((a)-1))) : 0)
@@ -240,7 +249,7 @@ typedef u8  b8;   // For consistency.
 #define M_PI 3.14159265358979323846
 #define TAU 6.283185307179586476925
 
-#define absolute_value(x) ((x) < 0 ? (-(x)) : (x))
+#define absolute_value(x) (((x) < 0) ? -(x) : (x))
 
 #define for_range(it, start, end) for (s64 it = start; it <= end; ++it)
 
@@ -409,8 +418,17 @@ typedef struct Allocator {
     void *data;
 } Allocator;
 
+extern thread_var Allocator current_allocator;
+
+#define SET_ALLOCATOR(a) do { current_allocator = a; } while (0)
+#define GET_ALLOCATOR() (current_allocator)
+
 // Heap allocator.
 TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, void *old_memory, void *allocator_data);
+
+#define heap_alloc(s) heap_allocator(ALLOCATOR_ALLOCATE, (s), 0, null, null)
+#define heap_realloc(mem, size, old_size) heap_allocator(ALLOCATOR_RESIZE, (size), (old_size), (mem), null)
+#define heap_free(mem) heap_allocator(ALLOCATOR_FREE, 0, 0, (mem), null)
 
 #if COMPILER_CL
 #define New(Type, ...) (Type *)core_new_alloc(size_of(Type), __VA_ARGS__)
@@ -425,9 +443,15 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 #endif
 
 #if COMPILER_CL
-#define MemFree(m, ...) core_memfree(m, __VA_ARGS__)
+#define MemRealloc(m, new_size, old_size, ...) core_mem_realloc((m), (new_size), (old_size), __VA_ARGS__)
 #else
-#define MemFree(m, ...) core_memfree(m, ##__VA_ARGS__)
+#define MemRealloc(m, new_size, old_size, ...) core_mem_realloc((m), (new_size), (old_size), ##__VA_ARGS__)
+#endif
+
+#if COMPILER_CL
+#define MemFree(m, ...) core_memfree((m), __VA_ARGS__)
+#else
+#define MemFree(m, ...) core_memfree((m), ##__VA_ARGS__)
 #endif
 
 
@@ -462,8 +486,14 @@ typedef enum Log_Mode {
     LOG_VERBOSE,
 } Log_Mode;
 
-#define LOGGER_PROC(name) void name(String message, String ident, Log_Mode mode, void *data)
+#define LOGGER_PROC(name) void name(String ident, String message, Log_Mode mode, void *data)
 typedef LOGGER_PROC(Logger_Proc);
+
+extern thread_var Logger_Proc *current_logger;
+
+#define Log(ident, message, mode) current_logger((ident), (message), (mode))
+#define SET_LOGGER(l) do { current_logger = l; } while (0)
+#define GET_LOGGER() (current_logger)
 
 // Cross-platform write string functions.
 void write_string(const char *s, bool to_standard_error = false);
@@ -489,12 +519,25 @@ TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *mes
 
 
 
-inline void *core_new_alloc(s64 size, Allocator a = {heap_allocator, null}) {
+inline u32 safe_truncate_u64(u64 value) {
+    assert(value <= MAX_U32);
+    u32 result = (u32)value;
+    return result;
+}
+
+
+
+inline void *core_new_alloc(s64 size, Allocator a = GET_ALLOCATOR()) {
     assert(a.proc != null);
     return a.proc(ALLOCATOR_ALLOCATE, size, 0, null, a.data);
 }
 
-inline void core_memfree(void *mem, Allocator a = {heap_allocator, null}) {
+inline void *core_mem_realloc(void *mem, s64 new_size, s64 old_size, Allocator a = GET_ALLOCATOR()) {
+    assert(a.proc != null);
+    return a.proc(ALLOCATOR_RESIZE, new_size, old_size, mem, a.data);
+}
+
+inline void core_memfree(void *mem, Allocator a = GET_ALLOCATOR()) {
     assert(a.proc != null);
     a.proc(ALLOCATOR_FREE, 0, 0, mem, a.data);
 }
@@ -825,6 +868,10 @@ inline void advance(String *s, s64 amount) {
 
 #ifdef GENERAL_IMPLEMENTATION
 
+thread_var Logger_Proc *current_logger = default_logger;
+thread_var Allocator current_allocator = {heap_allocator, null};
+
+
 #if OS_WINDOWS
 
 #ifdef INCLUDE_WINDEFS
@@ -835,6 +882,9 @@ inline void advance(String *s, s64 amount) {
 #endif
 
 
+#if COMPILER_CL
+#pragma comment(lib, "User32.lib")
+#endif
 
 
 void write_string(const char *s, bool to_standard_error) {
