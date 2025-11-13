@@ -491,7 +491,7 @@ typedef LOGGER_PROC(Logger_Proc);
 
 extern thread_var Logger_Proc *current_logger;
 
-#define Log(ident, message, mode) current_logger((ident), (message), (mode))
+#define Log(ident, message, mode) current_logger((ident), (message), (mode), null)
 #define SET_LOGGER(l) do { current_logger = l; } while (0)
 #define GET_LOGGER() (current_logger)
 
@@ -513,6 +513,20 @@ inline void default_logger(String ident, String message, Log_Mode mode, void *da
 
     write_string(message);
     write_string("\n");
+}
+
+inline void error_logger(String ident, String message, Log_Mode mode, void *data) {
+    UNUSED(mode);
+    UNUSED(data);
+
+    if (ident.count) {
+        write_string("[", true);
+        write_string(ident, true);
+        write_string("]: ", true);
+    }
+
+    write_string(message, true);
+    write_string("\n", true);
 }
 
 TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message);
