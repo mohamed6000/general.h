@@ -222,6 +222,13 @@ typedef u8  b8;   // For consistency.
 #define align_forward_pointer(p, a) ((u8 *)(((umm)(p) + ((a)-1)) & ~((a)-1)))
 
 
+#if COMPILER_GCC
+#define IS_PRINTF_LIKE(fmtarg, first_vararg) __attribute__((__format__ (printf, fmtarg, first_vararg)))
+#else
+#define IS_PRINTF_LIKE(fmtarg, first_vararg)
+#endif
+
+
 // Assuming the input is non-zero.
 #define is_power_of_2(x) (((x) & ((x)-1)) == 0)
 
@@ -492,12 +499,17 @@ typedef enum Log_Mode {
     LOG_VERBOSE,
 } Log_Mode;
 
-#define LOGGER_PROC(name) void name(String ident, String message, Log_Mode mode, void *data)
+#define LOGGER_PROC(name) void name(Log_Mode mode, const char *ident, const char *message, ...)
 typedef LOGGER_PROC(Logger_Proc);
 
 extern thread_var Logger_Proc *current_logger;
 
-#define Log(ident, message, mode) current_logger((ident), (message), (mode), null)
+#if COMPILER_CL
+#define Log(mode, ident, message, ...) current_logger((mode), (ident), (message), __VA_ARGS__)
+#else
+#define Log(mode, ident, message, ...) current_logger((mode), (ident), (message), ##__VA_ARGS__)
+#endif
+
 #define SET_LOGGER(l) do { current_logger = l; } while (0)
 #define GET_LOGGER() (current_logger)
 
@@ -507,11 +519,27 @@ void write_string(const char *s, u32 count, bool to_standard_error = false);
 
 void write_string(String s, bool to_standard_error = false);
 
-inline void default_logger(String ident, String message, Log_Mode mode, void *data) {
-    UNUSED(mode);
-    UNUSED(data);
+/*
 
-    if (ident.count) {
+mprint():
+  
+  allocates the string on the fly,
+  providing an initial guess for the string is possible,
+  requires calling MemFree for the result,
+  in case of failure it returns null.
+
+*/
+
+const int MPRINT_INITIAL_GUESS = 256;
+
+char *mprint(const char *fmt, ...);
+char *mprint(int initial_guess, const char *fmt, ...);
+TINYRT_EXTERN char *mprint_valist(const char *fmt, va_list arg_list);
+
+inline LOGGER_PROC(default_logger) {
+    UNUSED(mode);
+
+    if (ident) {
         write_string("[");
         write_string(ident);
         write_string("]: ");
@@ -521,9 +549,8 @@ inline void default_logger(String ident, String message, Log_Mode mode, void *da
     write_string("\n");
 }
 
-inline void error_logger(String ident, String message, Log_Mode mode, void *data) {
+inline void error_logger(Log_Mode mode, String ident, String message, ...) {
     UNUSED(mode);
-    UNUSED(data);
 
     if (ident.count) {
         write_string("[", true);
@@ -535,7 +562,7 @@ inline void error_logger(String ident, String message, Log_Mode mode, void *data
     write_string("\n", true);
 }
 
-TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, char *details);
+TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, const char *details);
 
 
 
@@ -931,20 +958,86 @@ void write_string(String s, bool to_standard_error) {
 #include <stdarg.h>
 #include <stdio.h>
 
-char *mprint(char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
+char *mprint(const char *fmt, ...) {
+    char *result = null;
+    int size = MPRINT_INITIAL_GUESS;
 
-    int len = vsnprintf(null, 0, fmt, args);
+    while (1) {
+        result = NewArray(char, size);
+        if (!result) return null;
+        
+        va_list args;
+        va_start(args, fmt);
+        
+        int len = _vsnprintf(result, size, fmt, args);
+        va_end(args);
 
-    char *result = NewArray(char, len+1);
-    vsnprintf(result, len+1, fmt, args);
-    va_end(args);
+        if ((len >= 0) && (size >= len+1)) {
+            size = len;
+            break;
+        }
+
+        MemFree(result);
+        size *= 2;
+    }
 
     return result;
 }
 
-TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, char *details) {
+char *mprint(int size, const char *fmt, ...) {
+    assert(size > 0);
+    
+    char *result = null;
+
+    while (1) {
+        result = NewArray(char, size);
+        if (!result) return null;
+        
+        va_list args;
+        va_start(args, fmt);
+        
+        int len = _vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            size = len;
+            break;
+        }
+
+        MemFree(result);
+        size *= 2;
+    }
+
+    return result;
+}
+
+TINYRT_EXTERN char *mprint_valist(const char *fmt, va_list arg_list) {
+    char *result = null;
+    int size = MPRINT_INITIAL_GUESS;
+
+    while (1) {
+        result = NewArray(char, size);
+        if (!result) return null;
+        
+        va_list args;
+        args = arg_list;
+        
+        int len = _vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            size = len;
+            break;
+        }
+
+        MemFree(result);
+        size *= 2;
+    }
+
+    return result;
+}
+
+TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, const char *details) {
     char *full_message = mprint("%s%s", message, details);
 
     int id = MessageBoxA(null, full_message, title, MB_ABORTRETRYIGNORE | MB_ICONERROR | MB_SYSTEMMODAL | MB_DEFBUTTON3);
