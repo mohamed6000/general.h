@@ -269,6 +269,10 @@ typedef u8  b8;   // For consistency.
 #endif
 
 
+TINYRT_EXTERN void print_stacktrace(void);
+TINYRT_EXTERN char *get_stacktrace(void);
+
+
 #ifndef NO_ASSERT
 #ifdef ENABLE_ASSERTS
 // https://nullprogram.com/blog/2022/06/26/
@@ -276,8 +280,10 @@ typedef u8  b8;   // For consistency.
 #define assert(expression) \
 do { \
     if (!(expression)) { \
-        write_string("Assertion Failure: " STRINGIFY(expression) " at " __FILE__ ":" STRINGIFY(__LINE__) "\n"); \
-        if (tinyrt_abort_error_message("Assertion Failed", "Assert Failed\n" STRINGIFY(expression) "\nAt: " __FILE__ ":" STRINGIFY(__LINE__) "\n")) { \
+        write_string("Assertion Failure: " STRINGIFY(expression) " at " __FILE__ ":" STRINGIFY(__LINE__) "\n", true); \
+        char *stack_trace_details = get_stacktrace();  \
+        write_string(stack_trace_details, true);  \
+        if (tinyrt_abort_error_message("Assertion Failed", "Assert Failed\n" STRINGIFY(expression) "\nAt: " __FILE__ ":" STRINGIFY(__LINE__) "\n", /*char *details=*/stack_trace_details)) { \
             debug_break(); \
         } \
     } \
@@ -529,7 +535,7 @@ inline void error_logger(String ident, String message, Log_Mode mode, void *data
     write_string("\n", true);
 }
 
-TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message);
+TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, char *details);
 
 
 
@@ -922,14 +928,152 @@ void write_string(String s, bool to_standard_error) {
     UNUSED(status);
 }
 
-TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message) {
-    int id = MessageBoxA(null, message, title, MB_ABORTRETRYIGNORE | MB_ICONERROR | MB_SYSTEMMODAL | MB_DEFBUTTON3);
+#include <stdarg.h>
+#include <stdio.h>
+
+char *mprint(char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    int len = vsnprintf(null, 0, fmt, args);
+
+    char *result = NewArray(char, len+1);
+    vsnprintf(result, len+1, fmt, args);
+    va_end(args);
+
+    return result;
+}
+
+TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, char *details) {
+    char *full_message = mprint("%s%s", message, details);
+
+    int id = MessageBoxA(null, full_message, title, MB_ABORTRETRYIGNORE | MB_ICONERROR | MB_SYSTEMMODAL | MB_DEFBUTTON3);
     if (id == IDABORT) {
         ExitProcess(3);
     }
 
     return (id == IDRETRY);
 }
+
+#ifdef ENABLE_ASSERTS
+#include <dbghelp.h>
+#if COMPILER_CL
+#pragma comment(lib, "Dbghelp.lib")
+#endif
+
+
+TINYRT_EXTERN void print_stacktrace(void) {
+    HANDLE process = GetCurrentProcess();
+    BOOL ok = SymInitialize(process, null, TRUE);
+    if (ok == TRUE) {
+        // Windows Server 2003 and Windows XP: The sum of the FramesToSkip and FramesToCapture parameters must be less than 63.
+        const int MAX_STACK_FRAMES = 63;
+        void *stack[MAX_STACK_FRAMES];
+
+        const int MAX_SYMBOL_NAME = 255;
+        u8 buf[size_of(SYMBOL_INFO) + (MAX_SYMBOL_NAME+1)];
+
+        SYMBOL_INFO *symbol_info = (SYMBOL_INFO *)buf;
+        symbol_info->MaxNameLen = MAX_SYMBOL_NAME;
+        symbol_info->SizeOfStruct = size_of(SYMBOL_INFO);
+
+        SymSetOptions(SYMOPT_LOAD_LINES);
+
+        IMAGEHLP_LINEW64 line64 = {};
+        line64.SizeOfStruct = size_of(IMAGEHLP_LINEW64);
+
+        u16 frames = CaptureStackBackTrace(0, MAX_STACK_FRAMES, stack, null);
+        if (frames > 0) {
+            printf("Caller stack:\n");
+            for (u16 index = 0; index < frames; ++index) {
+                DWORD64 dw_displacement64;
+                BOOL ok = SymFromAddr(process, (DWORD64)(stack[index]), &dw_displacement64, symbol_info);
+                if (!ok) continue;
+
+                s64 call_line;
+                s64 stack_line;
+
+                DWORD64 call_address = (DWORD64)(stack[index]);  // Caller location.
+                DWORD64 stack_address = symbol_info->Address;  // Procedure location.
+
+                DWORD dw_displacement;
+                ok = SymGetLineFromAddrW64(process, call_address, &dw_displacement, &line64);
+                if (!ok) continue;
+
+                call_line = line64.LineNumber;
+
+                ok = SymGetLineFromAddrW64(process, stack_address, &dw_displacement, &line64);
+                if (!ok) continue;
+
+                stack_line = line64.LineNumber;
+
+                printf("0x%016llX: %s(%lld) Line %lld\n", stack_address, symbol_info->Name, stack_line, call_line);
+            }
+        }
+    } else {
+        write_string("[backtrace] Error: Failed to SymInitialize.\n", true);
+    }
+}
+
+TINYRT_EXTERN char *get_stacktrace(void) {
+    char *result = null;
+
+    HANDLE process = GetCurrentProcess();
+    BOOL ok = SymInitialize(process, null, TRUE);
+    if (ok == TRUE) {
+        // Windows Server 2003 and Windows XP: The sum of the FramesToSkip and FramesToCapture parameters must be less than 63.
+        const int MAX_STACK_FRAMES = 63;
+        void *stack[MAX_STACK_FRAMES];
+
+        const int MAX_SYMBOL_NAME = 255;
+        u8 buf[size_of(SYMBOL_INFO) + (MAX_SYMBOL_NAME+1)];
+
+        SYMBOL_INFO *symbol_info = (SYMBOL_INFO *)buf;
+        symbol_info->MaxNameLen = MAX_SYMBOL_NAME;
+        symbol_info->SizeOfStruct = size_of(SYMBOL_INFO);
+
+        SymSetOptions(SYMOPT_LOAD_LINES);
+
+        IMAGEHLP_LINEW64 line64 = {};
+        line64.SizeOfStruct = size_of(IMAGEHLP_LINEW64);
+
+        u16 frames = CaptureStackBackTrace(0, MAX_STACK_FRAMES, stack, null);
+        if (frames > 0) {
+            result = mprint("Caller stack:\n");
+            for (u16 index = 0; index < frames; ++index) {
+                DWORD64 dw_displacement64;
+                BOOL ok = SymFromAddr(process, (DWORD64)(stack[index]), &dw_displacement64, symbol_info);
+                if (!ok) continue;
+
+                s64 call_line;
+                s64 stack_line;
+
+                DWORD64 call_address = (DWORD64)(stack[index]);  // Caller location.
+                DWORD64 stack_address = symbol_info->Address;  // Procedure location.
+
+                DWORD dw_displacement;
+                ok = SymGetLineFromAddrW64(process, call_address, &dw_displacement, &line64);
+                if (!ok) continue;
+
+                call_line = line64.LineNumber;
+
+                ok = SymGetLineFromAddrW64(process, stack_address, &dw_displacement, &line64);
+                if (!ok) continue;
+
+                stack_line = line64.LineNumber;
+
+                char *s = mprint("%s0x%016llX: %s(%lld) Line %lld\n", result, stack_address, symbol_info->Name, stack_line, call_line);
+                MemFree(result);
+                result = s;
+            }
+        }
+    } else {
+        write_string("[backtrace] Error: Failed to SymInitialize.\n", true);
+    }
+
+    return result;
+}
+#endif  // ENABLE_ASSERTS
 
 
 
