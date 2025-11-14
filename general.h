@@ -146,6 +146,7 @@
 
 
 #if COMPILER_CL
+#define _CRT_SECURE_NO_WARNINGS (1)
 #include <intrin.h>
 #endif
 
@@ -212,8 +213,14 @@ typedef u8  b8;   // For consistency.
 #error Undefined SHARED_EXPORT for this compiler
 #endif
 
+#if LANGUAGE_CPP
+// #define offset_of(Type, member) ((umm)(&((Type *)0)->member))
+#define offset_of(Type, member) offsetof(Type, member)
+#else
+#define offset_of(Type, member) ((umm)(&((Type *)0)->member))
+#endif
+
 #define size_of(x) sizeof(x)
-#define offset_of(Type, member) (umm)&(((Type *)0)->member)
 #define array_count(a) (size_of(a) / size_of((a)[0]))
 
 #define align_forward_offset(s, a) (((s) & ((a)-1)) ? ((a) - ((s) & ((a)-1))) : 0)
@@ -253,7 +260,10 @@ typedef u8  b8;   // For consistency.
 #define u32_to_pointer(Type, n) (Type *)((uintptr_t)(n))
 #define int_to_pointer(Type, n) (Type *)((uintptr_t)(n))
 
+#ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+
 #define TAU 6.283185307179586476925
 
 #define absolute_value(x) (((x) < 0) ? -(x) : (x))
@@ -355,7 +365,7 @@ static_assert(size_of(b16) == 2, "size_of(b16) == 2");
 static_assert(size_of(b32) == 4, "size_of(b32) == 4");
 static_assert(size_of(b64) == 8, "size_of(b64) == 8");
 
-/******** Min/Max type size ********/
+/******** Min/Max type sizes ********/
 
 #define MIN_S8  0x80 // -128
 #define MAX_S8  0x7f // 127
@@ -381,7 +391,7 @@ static_assert(size_of(b64) == 8, "size_of(b64) == 8");
 #define F64_MAX   1.7976931348623157e+308
 
 
-#define BIT(x) (1ull << (x))
+#define BIT(x) (1 << (x))
 #define KB(x) ((u64)(x) << 10ull)
 #define MB(x) ((u64)(x) << 20ull)
 #define GB(x) ((u64)(x) << 30ull)
@@ -530,6 +540,8 @@ mprint():
 
 */
 
+#include <stdarg.h>
+
 const int MPRINT_INITIAL_GUESS = 256;
 
 char *mprint(const char *fmt, ...);
@@ -640,6 +652,7 @@ inline void Clamp(float *pointer, float low, float high) {
     if (*pointer < low) { *pointer = low; }
     if (*pointer > high) { *pointer = high; }
 }
+#define clamp(v, l, h) (((v) < (l)) ? (l) : (((v) > (h)) ? (h) : (v)))
 #else
 #define Clamp(v, l, h) (((v) < (l)) ? (l) : (((v) > (h)) ? (h) : (v)))
 #endif
@@ -785,19 +798,13 @@ inline bool strings_are_equal(char *a, char *b) {
 }
 
 inline bool strings_are_equal(s64 length_a, char *a, s64 length_b, char *b) {
-    bool result = (length_a == length_b);
+    if (length_a != length_b) return false;
 
-    if (result) {
-        result = true;
-        for (s64 index = 0; index < length_a; ++index) {
-            if (a[index] != b[index]) {
-                result = false;
-                break;
-            }
-        }
+    for (s64 index = 0; index < length_a; ++index) {
+        if (a[index] != b[index]) return false;
     }
 
-    return result;
+    return true;
 }
 
 inline bool strings_are_equal(s64 length_a, char *a, char *b) {
@@ -955,7 +962,6 @@ void write_string(String s, bool to_standard_error) {
     UNUSED(status);
 }
 
-#include <stdarg.h>
 #include <stdio.h>
 
 char *mprint(const char *fmt, ...) {
@@ -1057,8 +1063,8 @@ TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *mes
 
 TINYRT_EXTERN void print_stacktrace(void) {
     HANDLE process = GetCurrentProcess();
-    BOOL ok = SymInitialize(process, null, TRUE);
-    if (ok == TRUE) {
+    BOOL initted = SymInitialize(process, null, TRUE);
+    if (initted == TRUE) {
         // Windows Server 2003 and Windows XP: The sum of the FramesToSkip and FramesToCapture parameters must be less than 63.
         const int MAX_STACK_FRAMES = 63;
         void *stack[MAX_STACK_FRAMES];
@@ -1087,7 +1093,7 @@ TINYRT_EXTERN void print_stacktrace(void) {
                 s64 stack_line;
 
                 DWORD64 call_address = (DWORD64)(stack[index]);  // Caller location.
-                DWORD64 stack_address = symbol_info->Address;  // Procedure location.
+                DWORD64 stack_address = symbol_info->Address;    // Procedure location.
 
                 DWORD dw_displacement;
                 ok = SymGetLineFromAddrW64(process, call_address, &dw_displacement, &line64);
@@ -1112,8 +1118,8 @@ TINYRT_EXTERN char *get_stacktrace(void) {
     char *result = null;
 
     HANDLE process = GetCurrentProcess();
-    BOOL ok = SymInitialize(process, null, TRUE);
-    if (ok == TRUE) {
+    BOOL initted = SymInitialize(process, null, TRUE);
+    if (initted == TRUE) {
         // Windows Server 2003 and Windows XP: The sum of the FramesToSkip and FramesToCapture parameters must be less than 63.
         const int MAX_STACK_FRAMES = 63;
         void *stack[MAX_STACK_FRAMES];
@@ -1142,7 +1148,7 @@ TINYRT_EXTERN char *get_stacktrace(void) {
                 s64 stack_line;
 
                 DWORD64 call_address = (DWORD64)(stack[index]);  // Caller location.
-                DWORD64 stack_address = symbol_info->Address;  // Procedure location.
+                DWORD64 stack_address = symbol_info->Address;    // Procedure location.
 
                 DWORD dw_displacement;
                 ok = SymGetLineFromAddrW64(process, call_address, &dw_displacement, &line64);
