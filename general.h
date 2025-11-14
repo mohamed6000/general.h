@@ -104,6 +104,14 @@
 #endif
 
 
+// Arch cracking.
+#if ARCH_X86 || ARCH_X64 || ARCH_ARM || ARCH_ARM64
+#define ARCH_LITTLE_ENDIAN 1
+#else
+#error Unknown architecture endianness
+#endif
+
+
 #if !defined(COMPILER_CL)
     #define COMPILER_CL 0
 #endif
@@ -191,6 +199,22 @@ typedef u8  b8;   // For consistency.
 #define thread_var __thread
 #else
 #error Undefined thread_var for this compiler
+#endif
+
+#if COMPILER_CL
+#define TINYRT_INLINE __forceinline
+#elif COMPILER_CLANG || COMPILER_GCC
+#define TINYRT_INLINE __attribute__((always_inline))
+#else
+#error Undefined inline for this compiler
+#endif
+
+#if COMPILER_CL
+#define TINYRT_NO_INLINE __declspec(noinline)
+#elif COMPILER_CLANG || COMPILER_GCC
+#define TINYRT_NO_INLINE __attribute__((noinline))
+#else
+#error Undefined no_inline for this compiler
 #endif
 
 #if OS_WINDOWS
