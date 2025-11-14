@@ -239,12 +239,7 @@ typedef u8  b8;   // For consistency.
 // Assuming the input is non-zero.
 #define is_power_of_2(x) (((x) & ((x)-1)) == 0)
 
-#if COMPILER_CL
 #define UNUSED(x) (void)(x)
-#else
-#define UNUSED(x) (void)size_of(x)
-#endif
-
 #define CONCAT_INTERNAL(x, y) x##y
 #define CONCAT(x, y) CONCAT_INTERNAL(x, y)
 
@@ -1048,7 +1043,7 @@ TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *mes
 
     int id = MessageBoxA(null, full_message, title, MB_ABORTRETRYIGNORE | MB_ICONERROR | MB_SYSTEMMODAL | MB_DEFBUTTON3);
     if (id == IDABORT) {
-        ExitProcess(3);
+        ExitProcess(0);
     }
 
     return (id == IDRETRY);
@@ -1182,16 +1177,16 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 
     switch (mode) {
         case ALLOCATOR_ALLOCATE:
-            return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size);
+            return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (umm)size);
 
         case ALLOCATOR_RESIZE: {
             // Allocate, copy, free.
 
-            void *result = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size);
+            void *result = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (umm)size);
             if (result == null) return null;
 
             if (old_memory && (old_size > 0)) {
-                memcpy(result, old_memory, old_size);
+                memcpy(result, old_memory, (umm)old_size);
                 HeapFree(GetProcessHeap(), 0, old_memory);
             }
 
