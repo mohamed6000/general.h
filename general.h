@@ -203,8 +203,10 @@ typedef u8  b8;   // For consistency.
 
 #if COMPILER_CL
 #define TINYRT_INLINE __forceinline
-#elif COMPILER_CLANG || COMPILER_GCC
+#elif COMPILER_CLANG
 #define TINYRT_INLINE __attribute__((always_inline))
+#elif COMPILER_GCC
+#define TINYRT_INLINE __attribute__((always_inline)) inline
 #else
 #error Undefined inline for this compiler
 #endif
@@ -1159,9 +1161,15 @@ TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *mes
 #endif
 
 
+/*
 TINYRT_EXTERN void print_stacktrace(void) {
     HANDLE process = GetCurrentProcess();
-    BOOL initted = SymInitialize(process, null, TRUE);
+ 
+    static BOOL initted = false;
+    if (!initted) {
+        initted = SymInitialize(process, null, TRUE);
+    }
+    
     if (initted == TRUE) {
         // Windows Server 2003 and Windows XP: The sum of the FramesToSkip and FramesToCapture parameters must be less than 63.
         const int MAX_STACK_FRAMES = 63;
@@ -1211,12 +1219,18 @@ TINYRT_EXTERN void print_stacktrace(void) {
         write_string("[backtrace] Error: Failed to SymInitialize.\n", true);
     }
 }
+*/
 
 TINYRT_EXTERN char *get_stacktrace(void) {
     char *result = null;
-
     HANDLE process = GetCurrentProcess();
-    BOOL initted = SymInitialize(process, null, TRUE);
+ 
+    static BOOL initted = false;
+    if (!initted) {
+        initted = SymInitialize(process, null, TRUE);
+        SymSetOptions(SYMOPT_LOAD_LINES);
+    }
+
     if (initted == TRUE) {
         // Windows Server 2003 and Windows XP: The sum of the FramesToSkip and FramesToCapture parameters must be less than 63.
         const int MAX_STACK_FRAMES = 63;
@@ -1228,8 +1242,6 @@ TINYRT_EXTERN char *get_stacktrace(void) {
         SYMBOL_INFO *symbol_info = (SYMBOL_INFO *)buf;
         symbol_info->MaxNameLen = MAX_SYMBOL_NAME;
         symbol_info->SizeOfStruct = size_of(SYMBOL_INFO);
-
-        SymSetOptions(SYMOPT_LOAD_LINES);
 
         IMAGEHLP_LINEW64 line64 = {};
         line64.SizeOfStruct = size_of(IMAGEHLP_LINEW64);
