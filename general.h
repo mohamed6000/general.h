@@ -316,12 +316,15 @@ TINYRT_EXTERN char *get_stacktrace(void);
 #define assert(expression) \
 do { \
     if (!(expression)) { \
+        set_console_text_color(SYSTEM_TEXT_RED, true); \
         write_string("Assertion Failure: " STRINGIFY(expression) " at " __FILE__ ":" STRINGIFY(__LINE__) "\n", true); \
+        set_console_text_color(SYSTEM_TEXT_LIGHT_GRAY, true); \
         char *stack_trace_details = get_stacktrace();  \
         write_string(stack_trace_details, true);  \
         if (tinyrt_abort_error_message("Assertion Failed", "Assert Failed\n" STRINGIFY(expression) "\nAt: " __FILE__ ":" STRINGIFY(__LINE__) "\n", /*char *details=*/stack_trace_details)) { \
             debug_break(); \
         } \
+        set_console_text_color(SYSTEM_TEXT_WHITE, true); \
     } \
 } while (0)
 
@@ -547,6 +550,30 @@ void write_string(const char *s, bool to_standard_error = false);
 void write_string(const char *s, u32 count, bool to_standard_error = false);
 
 void write_string(String s, bool to_standard_error = false);
+
+typedef enum System_Console_Text_Color {
+    SYSTEM_TEXT_BLACK,
+    SYSTEM_TEXT_DARK_BLUE,
+    SYSTEM_TEXT_DARK_GREEN,
+    SYSTEM_TEXT_LIGHT_BLUE,
+    SYSTEM_TEXT_DARK_RED,
+    SYSTEM_TEXT_MAGENTA,
+    SYSTEM_TEXT_ORANGE,
+    SYSTEM_TEXT_LIGHT_GRAY,
+    SYSTEM_TEXT_GRAY,
+    SYSTEM_TEXT_BLUE,
+    SYSTEM_TEXT_GREEN,
+    SYSTEM_TEXT_CYAN,
+    SYSTEM_TEXT_RED,
+    SYSTEM_TEXT_PURPLE,
+    SYSTEM_TEXT_YELLOW,
+    SYSTEM_TEXT_WHITE,
+
+    SYSTEM_TEXT_COUNT
+} System_Console_Text_Color;
+
+TINYRT_EXTERN void set_console_text_color(System_Console_Text_Color color, bool to_standard_error = false);
+TINYRT_EXTERN void set_console_text_color_ansi(System_Console_Text_Color color, bool to_standard_error = false);
 
 /*
 
@@ -951,6 +978,7 @@ thread_var Allocator current_allocator = {heap_allocator, null};
 #include "windefs.h"
 #else
 #define WIN32_LEAN_AND_MEAN
+#define VC_EXTRALEAN
 #include <windows.h>
 #endif
 
@@ -979,6 +1007,57 @@ void write_string(String s, bool to_standard_error) {
     HANDLE handle = to_standard_error ? GetStdHandle(STD_ERROR_HANDLE) : GetStdHandle(STD_OUTPUT_HANDLE);
     s32 status = WriteFile(handle, s.data, (DWORD)s.count, &written, null);
     UNUSED(status);
+}
+
+static const char *ansi_system_console_text_colors[SYSTEM_TEXT_COUNT] = {
+    "\x1b[30m",   // SYSTEM_TEXT_BLACK
+    "\x1b[34m",   // SYSTEM_TEXT_DARK_BLUE
+    "\x1b[32m",   // SYSTEM_TEXT_DARK_GREEN
+    "\x1b[36m",   // SYSTEM_TEXT_LIGHT_BLUE
+    "\x1b[31m",   // SYSTEM_TEXT_DARK_RED
+    "\x1b[35m",   // SYSTEM_TEXT_MAGENTA
+    "\x1b[33m",   // SYSTEM_TEXT_ORANGE
+    "\x1b[37m",   // SYSTEM_TEXT_LIGHT_GRAY
+    "\x1b[90m",   // SYSTEM_TEXT_GRAY
+    "\x1b[94m",   // SYSTEM_TEXT_BLUE
+    "\x1b[92m",   // SYSTEM_TEXT_GREEN
+    "\x1b[96m",   // SYSTEM_TEXT_CYAN
+    "\x1b[91m",   // SYSTEM_TEXT_RED
+    "\x1b[95m",   // SYSTEM_TEXT_PURPLE
+    "\x1b[93m",   // SYSTEM_TEXT_YELLOW
+    "\x1b[97m",   // SYSTEM_TEXT_WHITE
+};
+
+static u8 w32_system_console_text_colors[SYSTEM_TEXT_COUNT] = {
+    0,   // SYSTEM_TEXT_BLACK
+    1,   // SYSTEM_TEXT_DARK_BLUE
+    2,   // SYSTEM_TEXT_DARK_GREEN
+    3,   // SYSTEM_TEXT_LIGHT_BLUE
+    4,   // SYSTEM_TEXT_DARK_RED
+    5,   // SYSTEM_TEXT_MAGENTA
+    6,   // SYSTEM_TEXT_ORANGE
+    7,   // SYSTEM_TEXT_LIGHT_GRAY
+    8,   // SYSTEM_TEXT_GRAY
+    9,   // SYSTEM_TEXT_BLUE
+    10,  // SYSTEM_TEXT_GREEN
+    11,  // SYSTEM_TEXT_CYAN
+    12,  // SYSTEM_TEXT_RED
+    13,  // SYSTEM_TEXT_PURPLE
+    14,  // SYSTEM_TEXT_YELLOW
+    15,  // SYSTEM_TEXT_WHITE
+};
+
+TINYRT_EXTERN void set_console_text_color(System_Console_Text_Color color, bool to_standard_error) {
+#ifdef WINDOWS_CONSOLE_USE_ANSI
+    write_string(ansi_system_console_text_colors[color], to_standard_error);
+#else
+    HANDLE handle = to_standard_error ? GetStdHandle(STD_ERROR_HANDLE) : GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(handle, w32_system_console_text_colors[color]);
+#endif
+}
+
+TINYRT_EXTERN void set_console_text_color_ansi(System_Console_Text_Color color, bool to_standard_error) {
+    write_string(ansi_system_console_text_colors[color], to_standard_error);
 }
 
 #include <stdio.h>
