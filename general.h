@@ -650,6 +650,10 @@ inline void core_memfree(void *mem, Allocator a = GET_ALLOCATOR()) {
 }
 
 
+/******** Quicksort ********/
+void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
+
+
 
 
 /******** Utility functions ********/
@@ -688,6 +692,17 @@ inline u32 find_least_significant_set_bit(u32 value) {
 
     return 0;
 #endif
+}
+
+inline void swap_two_memory_blocks(u8 *a_, u8 *b_, umm count) {
+    u8 *a = a_;
+    u8 *b = b_;
+
+    while (count--) {
+        u8 temp = *a;
+        *a++    = *b;
+        *b++    = temp;
+    }
 }
 
 #if LANGUAGE_CPP
@@ -1327,6 +1342,39 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 }
 
 #endif  // OS_WINDOWS
+
+
+
+s64 get_partition_index_for_qsort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *)) {
+    s64 pivot_index = count - 1;
+
+    u8 *start = (u8 *)data;
+    u8 *end   = start + (count-1) * stride;
+
+    s64 i = -1;
+
+    for (u8 *it = start; it < end; it += stride) {
+        if (qsort_compare(it, start + pivot_index * stride)) {
+            i += 1;
+            swap_two_memory_blocks(start + i * stride, it, stride);
+        }
+    }
+
+    swap_two_memory_blocks(start + (i+1) * stride, start + pivot_index * stride, stride);
+    return i + 1;
+}
+
+void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *)) {
+    if (count < 2) return;
+
+    s64 pivot_index = get_partition_index_for_qsort(data, count, stride, qsort_compare);
+
+    s64 count0 = pivot_index;
+    s64 count1 = count - (pivot_index + 1);
+
+    quick_sort(data, count0, stride, qsort_compare);
+    quick_sort((u8 *)data + (pivot_index + 1) * stride, count1, stride, qsort_compare);
+}
 
 
 #endif  // GENERAL_IMPLEMENTATION
