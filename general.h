@@ -652,6 +652,7 @@ inline void core_memfree(void *mem, Allocator a = GET_ALLOCATOR()) {
 
 /******** Quicksort ********/
 void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
+void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
 
 
 
@@ -1345,35 +1346,70 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 
 
 
-s64 get_partition_index_for_qsort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *)) {
-    s64 pivot_index = count - 1;
+s64 get_partition_index_for_qsort(u8 *data, s64 low, s64 high, s64 stride, bool (*qsort_compare)(void *, void *)) {
+    u8 *pivot_address = data + high * stride;
 
-    u8 *start = (u8 *)data;
-    u8 *end   = start + (count-1) * stride;
+    u8 *start = data + low  * stride;
+    u8 *end   = data + high * stride;
 
-    s64 i = -1;
+    s64 i = low - 1;
 
     for (u8 *it = start; it < end; it += stride) {
-        if (qsort_compare(it, start + pivot_index * stride)) {
+        if (qsort_compare(it, pivot_address)) {
             i += 1;
-            swap_two_memory_blocks(start + i * stride, it, stride);
+            swap_two_memory_blocks(data + i * stride, it, stride);
         }
     }
 
-    swap_two_memory_blocks(start + (i+1) * stride, start + pivot_index * stride, stride);
+    swap_two_memory_blocks(data + (i+1) * stride, pivot_address, stride);
     return i + 1;
 }
 
 void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *)) {
     if (count < 2) return;
 
-    s64 pivot_index = get_partition_index_for_qsort(data, count, stride, qsort_compare);
+    s64 pivot_index = get_partition_index_for_qsort((u8 *)data, 0, count-1, stride, qsort_compare);
 
     s64 count0 = pivot_index;
     s64 count1 = count - (pivot_index + 1);
 
     quick_sort(data, count0, stride, qsort_compare);
     quick_sort((u8 *)data + (pivot_index + 1) * stride, count1, stride, qsort_compare);
+}
+
+void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *)) {
+    if (count < 2) return;
+
+    // This will use the currently selected allocator for the current thread.
+    // @Todo: We should use some kind of temp allocator.
+    s64 *qsort_stack = NewArray(s64, count * 2);
+
+    // Push.
+    qsort_stack[0] = 0;
+    qsort_stack[1] = count-1;
+
+    int top = 1;
+    while (top >= 0) {
+        // Pop.
+        s64 high = qsort_stack[top--];
+        s64 low  = qsort_stack[top--];
+
+        s64 pivot_index = get_partition_index_for_qsort((u8 *)data, low, high, stride, qsort_compare);
+
+        // Insert array intervals using the pivot index.
+
+        if ((pivot_index - 1) > low) {
+            qsort_stack[++top] = low;
+            qsort_stack[++top] = pivot_index - 1;
+        }
+
+        if ((pivot_index + 1) < high) {
+            qsort_stack[++top] = pivot_index + 1;
+            qsort_stack[++top] = high;
+        }
+    }
+
+    MemFree(qsort_stack);
 }
 
 
