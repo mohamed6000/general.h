@@ -1,0 +1,16 @@
+General code layer for C/C++ projects.
+
+It includes platform detection, loggers, allocators, strings, and dynamic array.
+Some of the code will work only on Windows.
+
+Currently supported compilers are:
+    - MSVC
+    - GCC
+    - CLANG
+
+Currently supported targets are x86, x64.
+
+Use:    #define GENERAL_IMPLEMENTATION
+before: #include "general.h"
+to include the implementation code.
+

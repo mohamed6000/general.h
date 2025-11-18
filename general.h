@@ -698,7 +698,7 @@ inline u32 find_least_significant_set_bit(u32 value) {
 #endif
 }
 
-inline void swap_two_memory_blocks(u8 *a_, u8 *b_, umm count) {
+inline void swap_two_memory_blocks(u8 *a_, u8 *b_, s64 count) {
     u8 *a = a_;
     u8 *b = b_;
 
