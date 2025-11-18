@@ -650,10 +650,13 @@ inline void core_memfree(void *mem, Allocator a = GET_ALLOCATOR()) {
 }
 
 
-/******** Quicksort ********/
-void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
-void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
+/******** Quick Sort ********/
+TINYRT_EXTERN void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
+TINYRT_EXTERN void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
 
+
+/******** Radix Sort ********/
+void radix_sort(u32 *data, s64 count);
 
 
 
@@ -1412,5 +1415,44 @@ void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void
     MemFree(qsort_stack);
 }
 
+void radix_sort(u32 *data, s64 count) {
+    if (count <= 0) return;
+
+    u32 biggest_entry = data[0];
+    for (s64 index = 1; index < count; ++index) {
+        if (data[index] > biggest_entry) {
+            biggest_entry = data[index];
+        }
+    }
+
+
+    u32 *output_array = NewArray(u32, count);
+
+    for (u32 exp = 1; (biggest_entry / exp) > 0; exp *= 10) {
+        // Counting sort.
+        u32 counts[10] = {0};
+
+        for (s64 index = 0; index < count; ++index) {
+            u32 loc = (data[index] / exp) % 10;
+            counts[loc] += 1;
+        }
+
+        for (u32 index = 1; index < 10; ++index) {
+            counts[index] += counts[index - 1];
+        }
+
+        for (s64 index = count - 1; index >= 0; --index) {
+            u32 loc = (data[index] / exp) % 10;
+            output_array[counts[loc] - 1] = data[index];
+            counts[loc] -= 1;
+        }
+
+        for (s64 index = 0; index < count; ++index) {
+            data[index] = output_array[index];
+        }
+    }
+
+    MemFree(output_array);
+}
 
 #endif  // GENERAL_IMPLEMENTATION
