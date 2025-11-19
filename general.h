@@ -502,6 +502,58 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 #endif
 
 
+/******** Pool allocator ********/
+const s64 POOL_PAGE_SIZE = KB(4);
+const s64 POOL_ALIGNMENT_DEFAULT = 8;
+
+typedef struct Pool_Block {
+    u8 *data;
+    Pool_Block *next;
+} Pool_Block;
+
+typedef struct Pool {
+    s64 memblock_size = POOL_PAGE_SIZE;
+    s64 alignment     = POOL_ALIGNMENT_DEFAULT;
+
+    u8 *current_memblock = null;
+    u8 *current_pos      = null;
+    s64 bytes_left       = 0;
+
+    s64 used_memblocks_count   = 0;
+    s64 unused_memblocks_count = 0;
+
+    Pool_Block *used_memblocks   = null;
+    Pool_Block *unused_memblocks = null;
+
+    Allocator block_allocator = {heap_allocator, null};
+} Pool;
+
+inline void pool_init(Pool *pool, 
+                      s64 block_size = POOL_PAGE_SIZE, 
+                      s64 alignment  = POOL_ALIGNMENT_DEFAULT) {
+    pool->memblock_size = block_size;
+    pool->alignment = alignment;
+
+    pool->current_memblock = null;
+    pool->current_pos      = null;
+    pool->bytes_left = 0;
+
+    pool->used_memblocks_count   = 0;
+    pool->unused_memblocks_count = 0;
+
+    pool->used_memblocks   = null;
+    pool->unused_memblocks = null;
+
+    pool->block_allocator = {heap_allocator, null};
+}
+
+TINYRT_EXTERN void *pool_get(Pool *pool, s64 nbytes);
+TINYRT_EXTERN void pool_release(Pool *pool);
+TINYRT_EXTERN void pool_reset(Pool *pool);
+
+TINYRT_EXTERN ALLOCATOR_PROC(pool_allocator_proc);
+
+
 /******** String ********/
 
 typedef struct String {
@@ -1349,7 +1401,129 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 
 
 
-s64 get_partition_index_for_qsort(u8 *data, s64 low, s64 high, s64 stride, bool (*qsort_compare)(void *, void *)) {
+static void pool_cycle_new_block(Pool *pool) {
+    if (!pool->block_allocator.proc) {
+        pool->block_allocator.proc = heap_allocator;
+        pool->block_allocator.data = null;
+    }
+
+    Allocator a = pool->block_allocator;
+
+    Pool_Block *new_block;
+    if (pool->unused_memblocks_count) {
+        // Pop.
+        new_block = pool->unused_memblocks;
+        pool->unused_memblocks = pool->unused_memblocks->next;
+        pool->unused_memblocks_count -= 1;
+    } else {
+        assert(a.proc != null);
+
+        // @Todo: Switch to a dynamic array, so I can avoid dealing with this.
+        new_block = New(Pool_Block, a);
+        
+        new_block->data = NewArray(u8, pool->memblock_size, a);
+        new_block->next = null;
+    }
+
+    pool->bytes_left = pool->memblock_size;
+    pool->current_memblock = new_block->data;
+    pool->current_pos      = new_block->data;
+}
+
+TINYRT_EXTERN void *pool_get(Pool *pool, s64 nbytes) {
+    assert(pool != null);
+
+    s64 extra = (pool->alignment - (nbytes % pool->alignment)) % pool->alignment;
+    nbytes += extra;
+
+    // @Todo: Check large allocations.
+
+    if (pool->bytes_left < nbytes) {
+        pool_cycle_new_block(pool);
+        if (!pool->current_memblock) return null;
+    }
+
+    void *result = pool->current_pos;
+    pool->current_pos += nbytes;
+    pool->bytes_left  -= nbytes;
+    return result;
+}
+
+TINYRT_EXTERN void pool_release(Pool *pool) {
+    pool_reset(pool);
+
+    assert(pool->block_allocator.proc != null);
+    for (Pool_Block *it = pool->unused_memblocks;
+         it != null; ) {
+        Pool_Block *to_remove = it;
+        it = it->next;
+        
+        pool->block_allocator.proc(ALLOCATOR_FREE, 0, 0, to_remove->data, pool->block_allocator.data);
+        pool->block_allocator.proc(ALLOCATOR_FREE, 0, 0, to_remove, pool->block_allocator.data);
+    }
+    pool->unused_memblocks = null;
+    pool->unused_memblocks_count = 0;
+}
+
+TINYRT_EXTERN void pool_reset(Pool *pool) {
+    if (pool->current_memblock) {
+        // Push.
+        Pool_Block *new_block = New(Pool_Block, pool->block_allocator);
+        new_block->data = pool->current_memblock;
+        new_block->next = pool->unused_memblocks;
+        pool->unused_memblocks = new_block;
+
+        pool->unused_memblocks_count += 1;
+
+        pool->current_memblock = null;
+    }
+
+    for (Pool_Block *it = pool->used_memblocks;
+         it != null;
+         it = it->next) {
+        // Push.
+        it->next = pool->unused_memblocks;
+        pool->unused_memblocks = it;
+        pool->unused_memblocks_count += 1;
+    }
+    pool->used_memblocks_count = 0;
+}
+
+TINYRT_EXTERN ALLOCATOR_PROC(pool_allocator_proc) {
+    UNUSED(old_size);
+    UNUSED(old_memory);
+
+    Pool *pool = (Pool *)allocator_data;
+    assert(pool != null);
+
+    switch (mode) {
+        case ALLOCATOR_ALLOCATE:
+            return pool_get(pool, size);
+
+        case ALLOCATOR_RESIZE:
+            // We do not resize our pools.
+            assert(false);
+            return null;
+
+        case ALLOCATOR_FREE:
+            // Not supported.
+            assert(false);
+            return null;
+
+        case ALLOCATOR_FREE_ALL: {
+            pool_release(pool);
+            return null;
+        } break;
+
+        default:
+            assert(false);
+            return null;
+    }
+}
+
+
+
+static s64 get_partition_index_for_qsort(u8 *data, s64 low, s64 high, s64 stride, bool (*qsort_compare)(void *, void *)) {
     u8 *pivot_address = data + high * stride;
 
     u8 *start = data + low  * stride;
