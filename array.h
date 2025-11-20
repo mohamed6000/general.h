@@ -8,7 +8,7 @@ struct Array {
     s64 allocated = 0;
     s64 count     = 0;
     T *data       = null;
-
+    
     Allocator allocator = {heap_allocator, null};
 
     TINYRT_INLINE T &operator[] (s64 index) {
