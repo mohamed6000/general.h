@@ -16,12 +16,15 @@
 #include "array.h"
 
 
-const s64 POOL_BUCKET_SIZE_DEFAULT = KB(4);
-const s64 POOL_ALIGNMENT_DEFAULT   = 8;
+const s64 POOL_BUCKET_SIZE_DEFAULT      = KB(64);
+const s64 POOL_OUT_OF_BAND_SIZE_DEFAULT = 6554;
+const s64 POOL_ALIGNMENT_DEFAULT        = 8;
+
 
 typedef struct Pool {
-    s64 memblock_size = POOL_BUCKET_SIZE_DEFAULT;
-    s64 alignment     = POOL_ALIGNMENT_DEFAULT;
+    s64 memblock_size    = POOL_BUCKET_SIZE_DEFAULT;
+    s64 out_of_band_size = POOL_OUT_OF_BAND_SIZE_DEFAULT;
+    s64 alignment        = POOL_ALIGNMENT_DEFAULT;
 
     u8 *current_memblock = null;
     u8 *current_pos      = null;
@@ -29,6 +32,7 @@ typedef struct Pool {
 
     Array<u8 *> used_memblocks;
     Array<u8 *> unused_memblocks;
+    Array<u8 *> out_of_band_allocations;
 
     Allocator block_allocator = {heap_allocator, null};
 } Pool;
@@ -67,6 +71,10 @@ static void pool_cycle_new_block(Pool *pool) {
         assert(false);
     }
 
+    if (pool->current_memblock) {
+        array_add(&pool->used_memblocks, pool->current_memblock);
+    }
+
     Allocator a = pool->block_allocator;
 
     u8 *new_block;
@@ -97,6 +105,8 @@ void set_allocators(Pool *pool, Allocator block_allocator, Allocator array_alloc
 
     pool->used_memblocks.allocator   = array_allocator;
     pool->unused_memblocks.allocator = array_allocator;
+    
+    pool->out_of_band_allocations.allocator = array_allocator;
 }
 
 TINYRT_EXTERN void *pool_get(Pool *pool, s64 nbytes) {
@@ -105,7 +115,13 @@ TINYRT_EXTERN void *pool_get(Pool *pool, s64 nbytes) {
     s64 extra = (pool->alignment - (nbytes % pool->alignment)) % pool->alignment;
     nbytes += extra;
 
-    // @Todo: Check large allocations.
+    if (nbytes >= POOL_OUT_OF_BAND_SIZE_DEFAULT) {
+        assert(pool->block_allocator.proc != null);
+        u8 *memory = (u8 *)pool->block_allocator.proc(ALLOCATOR_ALLOCATE, pool->memblock_size, 0, null, pool->block_allocator.data);
+        
+        if (memory) array_add(&pool->out_of_band_allocations, memory);
+        return memory;
+    }
 
     if (pool->bytes_left < nbytes) {
         pool_cycle_new_block(pool);
@@ -139,6 +155,12 @@ TINYRT_EXTERN void pool_reset(Pool *pool) {
         array_add(&pool->unused_memblocks, pool->used_memblocks[index]);
     }
     pool->used_memblocks.count = 0;
+
+    for (s64 index = 0; index < pool->out_of_band_allocations.count; ++index) {
+        u8 *it = pool->out_of_band_allocations[index];
+        pool->block_allocator.proc(ALLOCATOR_FREE, 0, 0, it, pool->block_allocator.data);
+    }
+    pool->out_of_band_allocations.count = 0;
 }
 
 TINYRT_EXTERN ALLOCATOR_PROC(pool_allocator_proc) {
