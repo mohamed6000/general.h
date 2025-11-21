@@ -716,8 +716,8 @@ inline void core_memfree(void *mem, Allocator a = GET_ALLOCATOR()) {
 
 
 /******** Quick Sort ********/
-TINYRT_EXTERN void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
-TINYRT_EXTERN void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *));
+TINYRT_EXTERN void quick_sort(void *data, s64 count, s64 stride, s64 (*qsort_compare)(void *, void *));
+TINYRT_EXTERN void quick_sort_it(void *data, s64 count, s64 stride, s64 (*qsort_compare)(void *, void *));
 
 
 /******** Radix Sort ********/
@@ -1507,7 +1507,7 @@ TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
 
 
 
-static s64 get_partition_index_for_qsort(u8 *data, s64 low, s64 high, s64 stride, bool (*qsort_compare)(void *, void *)) {
+static s64 get_partition_index_for_qsort(u8 *data, s64 low, s64 high, s64 stride, s64 (*qsort_compare)(void *, void *)) {
     u8 *pivot_address = data + high * stride;
 
     u8 *start = data + low  * stride;
@@ -1516,7 +1516,7 @@ static s64 get_partition_index_for_qsort(u8 *data, s64 low, s64 high, s64 stride
     s64 i = low - 1;
 
     for (u8 *it = start; it < end; it += stride) {
-        if (qsort_compare(it, pivot_address)) {
+        if (qsort_compare(it, pivot_address) < 0) {
             i += 1;
             swap_two_memory_blocks(data + i * stride, it, stride);
         }
@@ -1526,19 +1526,32 @@ static s64 get_partition_index_for_qsort(u8 *data, s64 low, s64 high, s64 stride
     return i + 1;
 }
 
-void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *)) {
+void quick_sort(void *data, s64 count, s64 stride, s64 (*qsort_compare)(void *, void *)) {
     if (count < 2) return;
 
-    s64 pivot_index = get_partition_index_for_qsort((u8 *)data, 0, count-1, stride, qsort_compare);
+    u8 *start = (u8 *)data;
+    u8 *pivot_address = start + (count / 2) * stride;
 
-    s64 count0 = pivot_index;
-    s64 count1 = count - (pivot_index + 1);
+    s64 i = 0;
+    s64 j = count-1;
 
-    quick_sort(data, count0, stride, qsort_compare);
-    quick_sort((u8 *)data + (pivot_index + 1) * stride, count1, stride, qsort_compare);
+    while (1) {
+        while (qsort_compare(start + i*stride, pivot_address) < 0) { i += 1; }
+        while (qsort_compare(pivot_address, start + j*stride) < 0) { j -= 1; }
+
+        if (i >= j) break;
+
+        swap_two_memory_blocks(start + i*stride, start + j*stride, stride);
+
+        i += 1;
+        j -= 1;
+    }
+
+    quick_sort(start, i, stride, qsort_compare);
+    quick_sort(start + i*stride, count-i, stride, qsort_compare);
 }
 
-void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *)) {
+void quick_sort_it(void *data, s64 count, s64 stride, s64 (*qsort_compare)(void *, void *)) {
     if (count < 2) return;
 
     s64 *qsort_stack = NewArray(s64, count * 2, temporary_allocator);
@@ -1567,8 +1580,6 @@ void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void
             qsort_stack[++top] = high;
         }
     }
-
-    // MemFree(qsort_stack);
 }
 
 void radix_sort(u32 *data, s64 count) {
@@ -1607,8 +1618,6 @@ void radix_sort(u32 *data, s64 count) {
             data[index] = output_array[index];
         }
     }
-
-    // MemFree(output_array);
 }
 
 #endif  // GENERAL_IMPLEMENTATION
