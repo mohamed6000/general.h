@@ -532,7 +532,7 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 
 
 /******** Temporary Storage ********/
-const s64 TEMPORARY_STORAGE_SIZE_DEFAULT = KB(4);
+const s64 TEMPORARY_STORAGE_SIZE_DEFAULT = KB(40);
 
 typedef struct Temporary_Storage {
     s64 size = TEMPORARY_STORAGE_SIZE_DEFAULT;
@@ -545,6 +545,7 @@ typedef struct Temporary_Storage {
 } Temporary_Storage;
 
 extern thread_var Temporary_Storage temporary_storage;
+extern thread_var Allocator temporary_allocator;
 
 TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc);
 
@@ -1061,6 +1062,7 @@ thread_var Logger_Proc *current_logger = default_logger;
 thread_var Allocator current_allocator = {heap_allocator, null};
 
 thread_var Temporary_Storage temporary_storage;
+thread_var Allocator temporary_allocator = {temporary_storage_proc, &temporary_storage};
 
 
 #if OS_WINDOWS
@@ -1539,9 +1541,7 @@ void quick_sort(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *,
 void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void *, void *)) {
     if (count < 2) return;
 
-    // This will use the currently selected allocator for the current thread.
-    // @Todo: We should use some kind of temp allocator.
-    s64 *qsort_stack = NewArray(s64, count * 2);
+    s64 *qsort_stack = NewArray(s64, count * 2, temporary_allocator);
 
     // Push.
     qsort_stack[0] = 0;
@@ -1568,7 +1568,7 @@ void quick_sort_it(void *data, s64 count, s64 stride, bool (*qsort_compare)(void
         }
     }
 
-    MemFree(qsort_stack);
+    // MemFree(qsort_stack);
 }
 
 void radix_sort(u32 *data, s64 count) {
@@ -1582,7 +1582,7 @@ void radix_sort(u32 *data, s64 count) {
     }
 
 
-    u32 *output_array = NewArray(u32, count);
+    u32 *output_array = NewArray(u32, count, temporary_allocator);
 
     for (u32 exp = 1; (biggest_entry / exp) > 0; exp *= 10) {
         // Counting sort.
@@ -1608,7 +1608,7 @@ void radix_sort(u32 *data, s64 count) {
         }
     }
 
-    MemFree(output_array);
+    // MemFree(output_array);
 }
 
 #endif  // GENERAL_IMPLEMENTATION
