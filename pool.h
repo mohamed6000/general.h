@@ -16,7 +16,7 @@
 #include "array.h"
 
 
-const s64 POOL_BUCKET_SIZE_DEFAULT      = KB(64);
+const s64 POOL_BUCKET_SIZE_DEFAULT      = 65536;
 const s64 POOL_OUT_OF_BAND_SIZE_DEFAULT = 6554;
 const s64 POOL_ALIGNMENT_DEFAULT        = 8;
 
@@ -117,7 +117,7 @@ TINYRT_EXTERN void *pool_get(Pool *pool, s64 nbytes) {
 
     if (nbytes >= POOL_OUT_OF_BAND_SIZE_DEFAULT) {
         assert(pool->block_allocator.proc != null);
-        u8 *memory = (u8 *)pool->block_allocator.proc(ALLOCATOR_ALLOCATE, pool->memblock_size, 0, null, pool->block_allocator.data);
+        u8 *memory = (u8 *)pool->block_allocator.proc(ALLOCATOR_ALLOCATE, nbytes, 0, null, pool->block_allocator.data);
         
         if (memory) array_add(&pool->out_of_band_allocations, memory);
         return memory;

@@ -10,7 +10,8 @@ Currently supported compilers are:
 
 Currently supported targets are x86, x64.
 
-Use:    #define GENERAL_IMPLEMENTATION
+Usage:  #define GENERAL_IMPLEMENTATION
 before: #include "general.h"
 to include the implementation code.
 
+To compile in release, add #define GENERAL_DEBUG 0 before including the file.

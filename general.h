@@ -9,10 +9,38 @@
     before: #include "general.h"
     to include the implementation code.
 
+
+    Control:
+
+    #define ENABLE_ASSERTS 1 (0 by default, 1 for debug build)
+    #define ENABLE_DEFERS 1 (0 by default)
+
+    #define INCLUDE_WINDEFS (undefined by default) use it to include 
+        custom "windefs.h" file instead of <windows.h>
+
+    #define WINDOWS_CONSOLE_USE_ANSI (undefined by default) uses
+        the ansi colors instead of win32 console text attributes 
+        for win32 platform.
+
+    #define NO_ASSERT (undefined by default) use it to prevent defining assert(x)
+
 */
 
-#define ENABLE_ASSERTS
-#define ENABLE_DEFERS
+#ifndef GENERAL_DEBUG
+#define GENERAL_DEBUG 1
+#endif
+
+#if GENERAL_DEBUG
+#define ENABLE_ASSERTS 1
+#endif
+
+#ifndef ENABLE_ASSERTS
+#define ENABLE_ASSERTS 0
+#endif
+
+#ifndef ENABLE_DEFERS
+#define ENABLE_DEFERS 0
+#endif
 
 /******** Compiler detection ********/
 
@@ -312,7 +340,7 @@ TINYRT_EXTERN char *get_stacktrace(void);
 
 
 #ifndef NO_ASSERT
-#ifdef ENABLE_ASSERTS
+#if ENABLE_ASSERTS
 // https://nullprogram.com/blog/2022/06/26/
 #undef assert
 #define assert(expression) \
@@ -337,7 +365,7 @@ do { \
 #endif  // NO_ASSERT
 
 
-#ifdef ENABLE_DEFERS
+#if ENABLE_DEFERS
 #if LANGUAGE_CPP
 template<typename T>
 struct ExitScope {
@@ -503,6 +531,24 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 
 
 
+/******** Temporary Storage ********/
+const s64 TEMPORARY_STORAGE_SIZE_DEFAULT = KB(4);
+
+typedef struct Temporary_Storage {
+    s64 size = TEMPORARY_STORAGE_SIZE_DEFAULT;
+    u8 *data = null;
+
+    s64 occupied = 0;
+    s64 high_water_mark = 0;
+
+    Allocator allocator;
+} Temporary_Storage;
+
+extern thread_var Temporary_Storage temporary_storage;
+
+TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc);
+
+
 /******** String ********/
 
 typedef struct String {
@@ -554,6 +600,8 @@ void write_string(const char *s, u32 count, bool to_standard_error = false);
 
 void write_string(String s, bool to_standard_error = false);
 
+TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, const char *details);
+
 typedef enum System_Console_Text_Color {
     SYSTEM_TEXT_BLACK,
     SYSTEM_TEXT_DARK_BLUE,
@@ -577,6 +625,23 @@ typedef enum System_Console_Text_Color {
 
 TINYRT_EXTERN void set_console_text_color(System_Console_Text_Color color, bool to_standard_error = false);
 TINYRT_EXTERN void set_console_text_color_ansi(System_Console_Text_Color color, bool to_standard_error = false);
+
+// Temporary storage helpers.
+inline s64 get_temporary_storage_mark(void) {
+    return temporary_storage.occupied;
+}
+
+inline void set_temporary_storage_mark(s64 mark) {
+    assert(mark >= 0);
+    assert(mark <= temporary_storage.size);
+    temporary_storage.occupied = mark;
+}
+
+inline void reset_temporary_storage(void) {
+    set_temporary_storage_mark(0);
+    temporary_storage.high_water_mark = 0;
+}
+
 
 /*
 
@@ -622,8 +687,6 @@ inline void error_logger(Log_Mode mode, String ident, String message, ...) {
     write_string(message, true);
     write_string("\n", true);
 }
-
-TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, const char *details);
 
 
 
@@ -801,7 +864,11 @@ inline const char *architecture_to_string(Architecture arch) {
 
 inline void my_panic(void) {
     write_string(S("Panic.\n"));
+#if GENERAL_DEBUG
     debug_break();
+#else
+    // abort();
+#endif
 }
 
 // Ratio helpers.
@@ -993,6 +1060,8 @@ inline void advance(String *s, s64 amount) {
 thread_var Logger_Proc *current_logger = default_logger;
 thread_var Allocator current_allocator = {heap_allocator, null};
 
+thread_var Temporary_Storage temporary_storage;
+
 
 #if OS_WINDOWS
 
@@ -1174,7 +1243,7 @@ TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *mes
     return (id == IDRETRY);
 }
 
-#ifdef ENABLE_ASSERTS
+#if ENABLE_ASSERTS
 #include <dbghelp.h>
 #if COMPILER_CL
 #pragma comment(lib, "Dbghelp.lib")
@@ -1347,6 +1416,92 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 }
 
 #endif  // OS_WINDOWS
+
+
+
+TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
+    Temporary_Storage *ts = (Temporary_Storage *)allocator_data;
+
+    if (!ts->allocator.proc) {
+        ts->allocator.proc = heap_allocator;
+        ts->allocator.data = null;
+    }
+
+    s64 nbytes = size;
+    s64 alignment = 8;
+
+    s64 extra = (alignment - (nbytes % alignment)) % alignment;
+    nbytes += extra;
+
+    switch (mode) {
+        case ALLOCATOR_ALLOCATE: {
+            if (!ts->data) {
+                ts->data = (u8 *)ts->allocator.proc(ALLOCATOR_ALLOCATE, ts->size, 0, null, ts->allocator.data);
+                if (!ts->data) return null;
+            }
+
+#if GENERAL_DEBUG
+            if (nbytes > (ts->size - ts->occupied)) {
+                ts->high_water_mark += nbytes;
+                Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %lld\n", ts->high_water_mark);
+                return heap_allocator(ALLOCATOR_ALLOCATE, nbytes, 0, null, null);
+            }
+#else
+            // @Cleanup:
+            assert(nbytes <= (ts->size - ts->occupied));
+#endif
+
+            void *result = ts->data + ts->occupied;
+            ts->occupied += nbytes;
+            return result;
+        } break;
+
+        case ALLOCATOR_RESIZE: {
+            // Bump allocators do not resize so we allocate
+            // a new chunk of memory using the new size.
+
+
+            // @Cutnpaste: from ALLOCATOR_ALLOCATE.
+#if GENERAL_DEBUG
+            if (nbytes > (ts->size - ts->occupied)) {
+                ts->high_water_mark += nbytes;
+                Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %lld\n", ts->high_water_mark);
+                return heap_allocator(ALLOCATOR_ALLOCATE, nbytes, 0, null, null);
+            }
+#else
+            // @Cleanup:
+            assert(nbytes <= (ts->size - ts->occupied));
+#endif
+
+            void *result = ts->data + ts->occupied;
+            ts->occupied += nbytes;
+
+            if (old_memory && (old_size > 0)) {
+                memcpy(result, old_memory, Min(old_size, nbytes));
+            }
+
+            return result;
+        } break;
+
+        case ALLOCATOR_FREE:
+            // Not supported.
+            assert(false);
+            return null;
+
+        case ALLOCATOR_FREE_ALL: {
+            ts->allocator.proc(ALLOCATOR_FREE, 0, 0, ts->data, ts->allocator.data);
+            ts->data = null;
+            ts->size = 0;
+            ts->occupied = 0;
+            ts->high_water_mark = 0;
+            return null;
+        } break;
+
+        default:
+            assert(false);
+            return null;
+    }
+}
 
 
 
