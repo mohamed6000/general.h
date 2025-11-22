@@ -663,6 +663,8 @@ char *mprint(const char *fmt, ...);
 char *mprint(int initial_guess, const char *fmt, ...);
 TINYRT_EXTERN char *mprint_valist(const char *fmt, va_list arg_list);
 
+char *tprint(const char *fmt, ...);
+
 inline LOGGER_PROC(default_logger) {
     UNUSED(mode);
 
@@ -676,10 +678,10 @@ inline LOGGER_PROC(default_logger) {
     write_string("\n");
 }
 
-inline void error_logger(Log_Mode mode, String ident, String message, ...) {
+inline LOGGER_PROC(error_logger) {
     UNUSED(mode);
 
-    if (ident.count) {
+    if (ident) {
         write_string("[", true);
         write_string(ident, true);
         write_string("]: ", true);
@@ -1035,11 +1037,6 @@ inline void advance(String *s, s64 amount) {
     s->count -= amount;
 }
 
-
-
-/******** Platform specific helper functions ********/
-
-
 #endif  // INCLUDE_GENERAL_H
 
 
@@ -1234,8 +1231,38 @@ TINYRT_EXTERN char *mprint_valist(const char *fmt, va_list arg_list) {
     return result;
 }
 
+char *tprint(const char *fmt, ...) {
+    char *result = null;
+
+    // Initial guess.
+    int size = MPRINT_INITIAL_GUESS;
+
+    while (1) {
+        s64 mark = get_temporary_storage_mark();
+        result = NewArray(char, size, temporary_allocator);
+        if (!result) return null;
+        
+        va_list args;
+        va_start(args, fmt);
+        
+        int len = _vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            temporary_storage.occupied -= (size - len - 1);
+            size = len;
+            break;
+        }
+
+        set_temporary_storage_mark(mark);
+        size *= 2;
+    }
+
+    return result;
+}
+
 TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, const char *details) {
-    char *full_message = mprint("%s%s", message, details);
+    char *full_message = tprint("%s%s", message, details);
 
     int id = MessageBoxA(null, full_message, title, MB_ABORTRETRYIGNORE | MB_ICONERROR | MB_SYSTEMMODAL | MB_DEFBUTTON3);
     if (id == IDABORT) {
@@ -1339,7 +1366,7 @@ TINYRT_EXTERN char *get_stacktrace(void) {
 
         u16 frames = CaptureStackBackTrace(0, MAX_STACK_FRAMES, stack, null);
         if (frames > 0) {
-            result = mprint("Caller stack:\n");
+            result = tprint("Caller stack:\n");
             for (u16 index = 0; index < frames; ++index) {
                 DWORD64 dw_displacement64;
                 BOOL ok = SymFromAddr(process, (DWORD64)(stack[index]), &dw_displacement64, symbol_info);
@@ -1362,8 +1389,7 @@ TINYRT_EXTERN char *get_stacktrace(void) {
 
                 stack_line = line64.LineNumber;
 
-                char *s = mprint("%s0x%016llX: %s(%lld) Line %lld\n", result, stack_address, symbol_info->Name, stack_line, call_line);
-                MemFree(result);
+                char *s = tprint("%s0x%016llX: %s(%lld) Line %lld\n", result, stack_address, symbol_info->Name, stack_line, call_line);
                 result = s;
             }
         }
