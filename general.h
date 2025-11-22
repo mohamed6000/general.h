@@ -663,7 +663,10 @@ char *mprint(const char *fmt, ...);
 char *mprint(int initial_guess, const char *fmt, ...);
 TINYRT_EXTERN char *mprint_valist(const char *fmt, va_list arg_list);
 
-char *tprint(const char *fmt, ...);
+TINYRT_EXTERN char *tprint(const char *fmt, ...);
+TINYRT_EXTERN char *tprint_valist(const char *fmt, va_list arg_list);
+
+TINYRT_EXTERN void print(const char *fmt, ...);
 
 inline LOGGER_PROC(default_logger) {
     UNUSED(mode);
@@ -1231,7 +1234,7 @@ TINYRT_EXTERN char *mprint_valist(const char *fmt, va_list arg_list) {
     return result;
 }
 
-char *tprint(const char *fmt, ...) {
+TINYRT_EXTERN char *tprint(const char *fmt, ...) {
     char *result = null;
 
     // Initial guess.
@@ -1259,6 +1262,46 @@ char *tprint(const char *fmt, ...) {
     }
 
     return result;
+}
+
+TINYRT_EXTERN char *tprint_valist(const char *fmt, va_list arg_list) {
+    char *result = null;
+    int size = MPRINT_INITIAL_GUESS;
+
+    while (1) {
+        s64 mark = get_temporary_storage_mark();
+        result = NewArray(char, size, temporary_allocator);
+        if (!result) return null;
+
+        va_list args;
+        args = arg_list;
+        
+        int len = _vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            temporary_storage.occupied -= (size - len - 1);
+            size = len;
+            break;
+        }
+
+        set_temporary_storage_mark(mark);
+        size *= 2;
+    }
+
+    return result;
+}
+
+TINYRT_EXTERN void print(const char *fmt, ...) {
+    s64 mark = get_temporary_storage_mark();
+    va_list args;
+    va_start(args, fmt);
+
+    char *s = tprint_valist(fmt, args);
+    va_end(args);
+
+    write_string(s);
+    set_temporary_storage_mark(mark);
 }
 
 TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, const char *details) {
