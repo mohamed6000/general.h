@@ -1444,7 +1444,19 @@ TINYRT_EXTERN char *get_stacktrace(void) {
 }
 #endif  // ENABLE_ASSERTS
 
+WCHAR *w32_utf8_to_wide(const char *s, Allocator allocator) {
+    if (!s) return null;
+    s64 byte_count = string_length(s);
 
+    int len = MultiByteToWideChar(CP_UTF8, 0, s, (int)byte_count, null, 0);
+    if (len <= 0) return null;
+
+    WCHAR *result = NewArray(WCHAR, len+1, allocator);
+    MultiByteToWideChar(CP_UTF8, 0, s, (int)byte_count, result, len);
+    result[len] = 0;
+
+    return result;
+}
 
 
 TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, void *old_memory, void *allocator_data) {
