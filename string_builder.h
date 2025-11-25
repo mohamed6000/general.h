@@ -114,7 +114,7 @@ void sb_append(String_Builder *sb, const char *s) {
     }
 
     u8 *dest = sb->current_buffer->data + sb->current_buffer->occupied;
-    memcpy(dest, s, count);
+    memcpy(dest, s, (umm)count);
 
     sb->current_buffer->occupied += count;
     sb->count += count;
@@ -128,7 +128,8 @@ void sb_append(String_Builder *sb, const char *s, s64 count) {
     }
 
     u8 *dest = sb->current_buffer->data + sb->current_buffer->occupied;
-    memcpy(dest, s, count);
+    // @Todo: Loop over for x86 when the count is larger than MAX_U32.
+    memcpy(dest, s, (umm)count);
 
     sb->current_buffer->occupied += count;
     sb->count += count;

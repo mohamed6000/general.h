@@ -535,11 +535,11 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 const s64 TEMPORARY_STORAGE_SIZE_DEFAULT = KB(40);
 
 typedef struct Temporary_Storage {
-    s64 size = TEMPORARY_STORAGE_SIZE_DEFAULT;
-    u8 *data = null;
+    s64 size;
+    u8 *data;
 
-    s64 occupied = 0;
-    s64 high_water_mark = 0;
+    s64 occupied;
+    s64 high_water_mark;
 
     Allocator allocator;
 } Temporary_Storage;
@@ -1061,8 +1061,9 @@ inline void advance(String *s, s64 amount) {
 thread_var Logger_Proc *current_logger = default_logger;
 thread_var Allocator current_allocator = {heap_allocator, null};
 
+// @Cleanup:
 thread_var Temporary_Storage temporary_storage;
-thread_var Allocator temporary_allocator = {temporary_storage_proc, &temporary_storage};
+thread_var Allocator temporary_allocator = {temporary_storage_proc, null};
 
 
 #if OS_WINDOWS
@@ -1503,7 +1504,9 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 
 
 TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
-    Temporary_Storage *ts = (Temporary_Storage *)allocator_data;
+    UNUSED(allocator_data);
+
+    Temporary_Storage *ts = &temporary_storage;
 
     if (!ts->allocator.proc) {
         ts->allocator.proc = heap_allocator;
@@ -1519,6 +1522,8 @@ TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
     switch (mode) {
         case ALLOCATOR_ALLOCATE: {
             if (!ts->data) {
+                if (!ts->size) ts->size = TEMPORARY_STORAGE_SIZE_DEFAULT;
+
                 ts->data = (u8 *)ts->allocator.proc(ALLOCATOR_ALLOCATE, ts->size, 0, null, ts->allocator.data);
                 if (!ts->data) return null;
             }
@@ -1560,7 +1565,7 @@ TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
             ts->occupied += nbytes;
 
             if (old_memory && (old_size > 0)) {
-                memcpy(result, old_memory, Min(old_size, nbytes));
+                memcpy(result, old_memory, (umm)Min(old_size, nbytes));
             }
 
             return result;
