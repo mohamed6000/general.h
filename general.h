@@ -132,14 +132,6 @@
 #endif
 
 
-// Arch cracking.
-#if ARCH_X86 || ARCH_X64 || ARCH_ARM || ARCH_ARM64
-#define ARCH_LITTLE_ENDIAN 1
-#else
-#error Unknown architecture endianness
-#endif
-
-
 #if !defined(COMPILER_CL)
     #define COMPILER_CL 0
 #endif
@@ -171,6 +163,13 @@
 #endif
 #if !defined(ARCH_ARM64)
     #define ARCH_ARM64 0
+#endif
+
+// Arch cracking.
+#if ARCH_X86 || ARCH_X64 || ARCH_ARM || ARCH_ARM64
+#define ARCH_LITTLE_ENDIAN 1
+#else
+#error Unknown architecture endianness
 #endif
 
 #if !defined(LANGUAGE_CPP)
