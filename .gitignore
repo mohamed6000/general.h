@@ -5,3 +5,5 @@ test.ilk
 test.obj
 test.pdb
 checks.bat
+test_linux
+text.txt

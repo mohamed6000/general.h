@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run (Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/test_linux",
+            "args": [],
+            "stopAtConnect": true,
+            "cwd": "${workspaceFolder}",
+        }
+    ]
+}

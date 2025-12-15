@@ -1502,6 +1502,269 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 
 
 
+#if OS_LINUX
+
+#include <unistd.h>
+#include <stdlib.h>
+
+void write_string(const char *s, bool to_standard_error) {
+    int handle = to_standard_error ? STDERR_FILENO : STDOUT_FILENO;
+    ssize_t written = write(handle, s, string_length(s));
+}
+
+void write_string(const char *s, u32 count, bool to_standard_error) {
+    int handle = to_standard_error ? STDERR_FILENO : STDOUT_FILENO;
+    ssize_t written = write(handle, s, count);
+}
+
+void write_string(String s, bool to_standard_error) {
+    int handle = to_standard_error ? STDERR_FILENO : STDOUT_FILENO;
+    ssize_t written = write(handle, s.data, s.count);
+}
+
+static const char *ansi_system_console_text_colors[SYSTEM_TEXT_COUNT] = {
+    "\x1b[30m",   // SYSTEM_TEXT_BLACK
+    "\x1b[34m",   // SYSTEM_TEXT_DARK_BLUE
+    "\x1b[32m",   // SYSTEM_TEXT_DARK_GREEN
+    "\x1b[36m",   // SYSTEM_TEXT_LIGHT_BLUE
+    "\x1b[31m",   // SYSTEM_TEXT_DARK_RED
+    "\x1b[35m",   // SYSTEM_TEXT_MAGENTA
+    "\x1b[33m",   // SYSTEM_TEXT_ORANGE
+    "\x1b[37m",   // SYSTEM_TEXT_LIGHT_GRAY
+    "\x1b[90m",   // SYSTEM_TEXT_GRAY
+    "\x1b[94m",   // SYSTEM_TEXT_BLUE
+    "\x1b[92m",   // SYSTEM_TEXT_GREEN
+    "\x1b[96m",   // SYSTEM_TEXT_CYAN
+    "\x1b[91m",   // SYSTEM_TEXT_RED
+    "\x1b[95m",   // SYSTEM_TEXT_PURPLE
+    "\x1b[93m",   // SYSTEM_TEXT_YELLOW
+    "\x1b[97m",   // SYSTEM_TEXT_WHITE
+};
+
+TINYRT_EXTERN void set_console_text_color(System_Console_Text_Color color, bool to_standard_error) {
+    // Checking if the handle is connected to a terminal.
+    if (isatty(to_standard_error ? STDERR_FILENO : STDOUT_FILENO)) {
+        write_string(ansi_system_console_text_colors[color], to_standard_error);
+    }
+}
+
+TINYRT_EXTERN void set_console_text_color_ansi(System_Console_Text_Color color, bool to_standard_error) {
+    write_string(ansi_system_console_text_colors[color], to_standard_error);
+}
+
+#include <stdio.h>
+
+char *mprint(const char *fmt, ...) {
+    char *result = null;
+    int size = MPRINT_INITIAL_GUESS;
+
+    while (1) {
+        result = NewArray(char, size);
+        if (!result) return null;
+        
+        va_list args;
+        va_start(args, fmt);
+        
+        int len = vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            size = len;
+            break;
+        }
+
+        MemFree(result);
+        size *= 2;
+    }
+
+    return result;
+}
+
+char *mprint(int size, const char *fmt, ...) {
+    assert(size > 0);
+    
+    char *result = null;
+
+    while (1) {
+        result = NewArray(char, size);
+        if (!result) return null;
+        
+        va_list args;
+        va_start(args, fmt);
+        
+        int len = vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            size = len;
+            break;
+        }
+
+        MemFree(result);
+        size *= 2;
+    }
+
+    return result;
+}
+
+TINYRT_EXTERN char *mprint_valist(const char *fmt, va_list arg_list) {
+    char *result = null;
+    int size = MPRINT_INITIAL_GUESS;
+
+    while (1) {
+        result = NewArray(char, size);
+        if (!result) return null;
+        
+        va_list args;
+        // args = arg_list;
+        va_copy(args, arg_list);  // @Cleanup
+        
+        int len = vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            size = len;
+            break;
+        }
+
+        MemFree(result);
+        size *= 2;
+    }
+
+    return result;
+}
+
+TINYRT_EXTERN char *tprint(const char *fmt, ...) {
+    char *result = null;
+
+    // Initial guess.
+    int size = MPRINT_INITIAL_GUESS;
+
+    while (1) {
+        s64 mark = get_temporary_storage_mark();
+        result = NewArray(char, size, temporary_allocator);
+        if (!result) return null;
+        
+        va_list args;
+        va_start(args, fmt);
+        
+        int len = vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            temporary_storage.occupied -= (size - len - 1);
+            size = len;
+            break;
+        }
+
+        set_temporary_storage_mark(mark);
+        size *= 2;
+    }
+
+    return result;
+}
+
+TINYRT_EXTERN char *tprint_valist(const char *fmt, va_list arg_list) {
+    char *result = null;
+    int size = MPRINT_INITIAL_GUESS;
+
+    while (1) {
+        s64 mark = get_temporary_storage_mark();
+        result = NewArray(char, size, temporary_allocator);
+        if (!result) return null;
+
+        va_list args;
+        // args = arg_list;
+        va_copy(args, arg_list);  // @Cleanup
+        
+        int len = vsnprintf(result, size, fmt, args);
+        va_end(args);
+
+        if ((len >= 0) && (size >= len+1)) {
+            temporary_storage.occupied -= (size - len - 1);
+            size = len;
+            break;
+        }
+
+        set_temporary_storage_mark(mark);
+        size *= 2;
+    }
+
+    return result;
+}
+
+TINYRT_EXTERN void print(const char *fmt, ...) {
+    s64 mark = get_temporary_storage_mark();
+    va_list args;
+    va_start(args, fmt);
+
+    char *s = tprint_valist(fmt, args);
+    va_end(args);
+
+    write_string(s);
+    set_temporary_storage_mark(mark);
+}
+
+TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, const char *details) {
+    fflush(stderr);
+    return true;
+}
+
+#if ENABLE_ASSERTS
+
+TINYRT_EXTERN char *get_stacktrace(void) {
+    char *result = null;
+
+    return result;
+}
+
+#endif  // ENABLE_ASSERTS
+
+TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, void *old_memory, void *allocator_data) {
+    UNUSED(allocator_data);
+
+    switch (mode) {
+        case ALLOCATOR_ALLOCATE:
+            // @Todo: mmap?
+            return malloc((umm)size);
+
+        case ALLOCATOR_RESIZE: {
+            // Allocate, copy, free.
+
+            void *result = malloc((umm)size);
+            if (result == null) return null;
+
+            if (old_memory && (old_size > 0)) {
+                memcpy(result, old_memory, (umm)old_size);
+                free(old_memory);
+            }
+
+            return result;
+        } break;
+
+        case ALLOCATOR_FREE: {
+            free(old_memory);
+            return null;
+        } break;
+
+        case ALLOCATOR_FREE_ALL: {
+            // Not supported.
+            assert(!"Not supported");
+            return null;
+        } break;
+
+        default: {
+            assert(false);
+            return null;
+        } break;
+    }
+    return null;
+}
+
+#endif  // OS_LINUX
+
+
+
 TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
     UNUSED(allocator_data);
 
