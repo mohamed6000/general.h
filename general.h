@@ -1718,7 +1718,7 @@ TINYRT_EXTERN char *get_stacktrace(void) {
     char *result = null;
 
     // @Note: to print the stack, compile with -rdynamic.
-    const int MAX_STACK_FRAMES = 100;
+    const int MAX_STACK_FRAMES = 64;
     void *stack[MAX_STACK_FRAMES];
 
     int frames = backtrace(stack, MAX_STACK_FRAMES);
