@@ -1712,8 +1712,36 @@ TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *mes
 
 #if ENABLE_ASSERTS
 
+#include <execinfo.h>
+
 TINYRT_EXTERN char *get_stacktrace(void) {
     char *result = null;
+
+    // @Note: to print the stack, compile with -rdynamic.
+    const int MAX_STACK_FRAMES = 100;
+    void *stack[MAX_STACK_FRAMES];
+
+    int frames = backtrace(stack, MAX_STACK_FRAMES);
+    if (frames > 0) {
+        print("Caller stack:\n");
+
+        char **symbols = backtrace_symbols(stack, frames);
+        if (symbols) {
+            for (int index = 0; index < frames; index++) {
+                void *stack_address = stack[index];
+                char *symbol = symbols[index];
+
+                // @Todo: line numbers...
+                print("0x%016llX: %s(%lld) Line %lld\n", 
+                      stack_address, 
+                      symbols[index], 
+                      0, 0);
+                      //stack_line, call_line);
+            }
+
+            free(symbols);
+        }
+    }
 
     return result;
 }
