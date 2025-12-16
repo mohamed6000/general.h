@@ -1,17 +1,27 @@
 General code layer for C/C++ projects.
 
 It includes platform detection, loggers, allocators, strings, and dynamic array.
-Some of the code will work only on Windows.
+Some of the code will work only on Windows and Linux.
 
-Currently supported compilers are:
-    - MSVC
-    - GCC
-    - CLANG
+Currently supported Platforms are:
+    - Windows(MSVC, GCC, Clang) Arch: x86, x64.
+    - Linux(GCC, Clang) Arch: x86, x64.
 
-Currently supported targets are x86, x64.
 
-Usage:  #define GENERAL_IMPLEMENTATION
-before: #include "general.h"
+General Usage: #define GENERAL_IMPLEMENTATION
+before #include "general.h"
 to include the implementation code.
+
+file.h: 
+#define FILE_IMPLEMENTATION
+before #include "file.h"
+
+pool.h: 
+#define POOL_IMPLEMENTATION
+before #include "pool.h"
+
+string_builder.h: 
+#define STRING_BUILDER_IMPLEMENTATION
+before #include "string_builder.h"
 
 To compile in release, add #define GENERAL_DEBUG 0 before including the file.

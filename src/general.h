@@ -1713,6 +1713,7 @@ TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *mes
 #if ENABLE_ASSERTS
 
 #include <execinfo.h>
+#include <inttypes.h>
 
 TINYRT_EXTERN char *get_stacktrace(void) {
     char *result = null;
@@ -1732,11 +1733,13 @@ TINYRT_EXTERN char *get_stacktrace(void) {
                 char *symbol = symbols[index];
 
                 // @Todo: line numbers...
-                print("0x%016llX: %s(%lld) Line %lld\n", 
+                s64 stack_line = 0;
+                s64 call_line  = 0;
+
+                print("0x%016" PRIXPTR ": %s(%" PRId64 ") Line %" PRId64 "\n", 
                       stack_address, 
                       symbols[index], 
-                      0, 0);
-                      //stack_line, call_line);
+                      stack_line, call_line);
             }
 
             free(symbols);
