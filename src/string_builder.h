@@ -171,6 +171,8 @@ char *to_string(String_Builder *sb, Allocator allocator) {
         dest += it->occupied;
     }
 
+    s[sb->count] = 0;
+
     return s;
 }
 
