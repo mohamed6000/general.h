@@ -24,6 +24,16 @@
 
     #define NO_ASSERT (undefined by default) use it to prevent defining assert(x)
 
+
+    To define a custom logger:
+
+        void logger_name(Log_Mode mode, const char *ident, const char *message, ...) {...}
+
+    To get printf like compile-time checking, forward declare with:
+        void logger_name(Log_Mode mode, const char *ident, const char *message, ...) IS_PRINTF_LIKE(3, 4);
+
+    The Logger_Proc typedef can be helpful in some cases.
+
 */
 
 #ifndef GENERAL_DEBUG
@@ -671,10 +681,23 @@ inline void default_logger(Log_Mode mode, const char *ident, const char *message
     if (ident) {
         write_string("[");
         write_string(ident);
-        write_string("]: ");
+        write_string("] ");
     }
 
+#if 0
     write_string(message);
+#else
+    s64 mark = get_temporary_storage_mark();
+    va_list args;
+    va_start(args, message);
+
+    char *s = tprint_valist(message, args);
+    va_end(args);
+
+    write_string(s);
+    set_temporary_storage_mark(mark);
+#endif
+
     write_string("\n");
 }
 
@@ -684,7 +707,7 @@ inline void error_logger(Log_Mode mode, const char *ident, const char *message, 
     if (ident) {
         write_string("[", true);
         write_string(ident, true);
-        write_string("]: ", true);
+        write_string("] ", true);
     }
 
     write_string(message, true);
