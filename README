@@ -5,7 +5,7 @@ Some of the code will work only on Windows and Linux.
 
 Currently supported Platforms are:
     - Windows(MSVC, GCC, Clang) Arch: x86, x64.
-    - Linux(GCC, Clang) Arch: x86, x64.
+    - Linux(GCC, Clang)         Arch: x86, x64.
 
 
 General Usage: #define GENERAL_IMPLEMENTATION

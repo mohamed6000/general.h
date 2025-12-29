@@ -282,7 +282,7 @@ typedef u8  b8;   // For consistency.
 #define align_forward_pointer(p, a) ((u8 *)(((umm)(p) + ((a)-1)) & ~((a)-1)))
 
 
-#if COMPILER_GCC
+#if COMPILER_GCC || COMPILER_CLANG
 #define IS_PRINTF_LIKE(fmtarg, first_vararg) __attribute__((__format__ (printf, fmtarg, first_vararg)))
 #else
 #define IS_PRINTF_LIKE(fmtarg, first_vararg)
@@ -334,7 +334,6 @@ typedef u8  b8;   // For consistency.
 #endif
 
 
-TINYRT_EXTERN void print_stacktrace(void);
 TINYRT_EXTERN char *get_stacktrace(void);
 
 
@@ -581,7 +580,7 @@ typedef enum Log_Mode {
 } Log_Mode;
 
 #define LOGGER_PROC(name) void name(Log_Mode mode, const char *ident, const char *message, ...)
-typedef LOGGER_PROC(Logger_Proc);
+typedef LOGGER_PROC(Logger_Proc) IS_PRINTF_LIKE(3, 4);
 
 extern thread_var Logger_Proc *current_logger;
 
@@ -658,14 +657,14 @@ mprint():
 
 const int MPRINT_INITIAL_GUESS = 256;
 
-char *mprint(const char *fmt, ...);
-char *mprint(int initial_guess, const char *fmt, ...);
+char *mprint(const char *fmt, ...) IS_PRINTF_LIKE(1, 2);
+char *mprint(int initial_guess, const char *fmt, ...) IS_PRINTF_LIKE(2, 3);
 TINYRT_EXTERN char *mprint_valist(const char *fmt, va_list arg_list);
 
-TINYRT_EXTERN char *tprint(const char *fmt, ...);
+TINYRT_EXTERN char *tprint(const char *fmt, ...) IS_PRINTF_LIKE(1, 2);
 TINYRT_EXTERN char *tprint_valist(const char *fmt, va_list arg_list);
 
-TINYRT_EXTERN void print(const char *fmt, ...);
+TINYRT_EXTERN void print(const char *fmt, ...) IS_PRINTF_LIKE(1, 2);
 
 inline LOGGER_PROC(default_logger) {
     UNUSED(mode);
@@ -1321,66 +1320,7 @@ TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *mes
 #pragma comment(lib, "Dbghelp.lib")
 #endif
 
-
-/*
-TINYRT_EXTERN void print_stacktrace(void) {
-    HANDLE process = GetCurrentProcess();
- 
-    static BOOL initted = false;
-    if (!initted) {
-        initted = SymInitialize(process, null, TRUE);
-    }
-    
-    if (initted == TRUE) {
-        // Windows Server 2003 and Windows XP: The sum of the FramesToSkip and FramesToCapture parameters must be less than 63.
-        const int MAX_STACK_FRAMES = 63;
-        void *stack[MAX_STACK_FRAMES];
-
-        const int MAX_SYMBOL_NAME = 255;
-        u8 buf[size_of(SYMBOL_INFO) + (MAX_SYMBOL_NAME+1)];
-
-        SYMBOL_INFO *symbol_info = (SYMBOL_INFO *)buf;
-        symbol_info->MaxNameLen = MAX_SYMBOL_NAME;
-        symbol_info->SizeOfStruct = size_of(SYMBOL_INFO);
-
-        SymSetOptions(SYMOPT_LOAD_LINES);
-
-        IMAGEHLP_LINEW64 line64 = {};
-        line64.SizeOfStruct = size_of(IMAGEHLP_LINEW64);
-
-        u16 frames = CaptureStackBackTrace(0, MAX_STACK_FRAMES, stack, null);
-        if (frames > 0) {
-            printf("Caller stack:\n");
-            for (u16 index = 0; index < frames; ++index) {
-                DWORD64 dw_displacement64;
-                BOOL ok = SymFromAddr(process, (DWORD64)(stack[index]), &dw_displacement64, symbol_info);
-                if (!ok) continue;
-
-                s64 call_line;
-                s64 stack_line;
-
-                DWORD64 call_address = (DWORD64)(stack[index]);  // Caller location.
-                DWORD64 stack_address = symbol_info->Address;    // Procedure location.
-
-                DWORD dw_displacement;
-                ok = SymGetLineFromAddrW64(process, call_address, &dw_displacement, &line64);
-                if (!ok) continue;
-
-                call_line = line64.LineNumber;
-
-                ok = SymGetLineFromAddrW64(process, stack_address, &dw_displacement, &line64);
-                if (!ok) continue;
-
-                stack_line = line64.LineNumber;
-
-                printf("0x%016llX: %s(%lld) Line %lld\n", stack_address, symbol_info->Name, stack_line, call_line);
-            }
-        }
-    } else {
-        write_string("[backtrace] Error: Failed to SymInitialize.\n", true);
-    }
-}
-*/
+#include <inttypes.h>
 
 TINYRT_EXTERN char *get_stacktrace(void) {
     char *result = null;
@@ -1432,7 +1372,21 @@ TINYRT_EXTERN char *get_stacktrace(void) {
 
                 stack_line = line64.LineNumber;
 
-                char *s = tprint("%s0x%016llX: %s(%lld) Line %lld\n", result, stack_address, symbol_info->Name, stack_line, call_line);
+#if COMPILER_GCC
+                char *s = tprint("%s0x%016I64d: %s(%I64d) Line %I64d\n", 
+                                 result, 
+                                 stack_address, 
+                                 symbol_info->Name, 
+                                 stack_line, 
+                                 call_line);
+#else
+                char *s = tprint("%s0x%016" PRIXPTR ": %s(%" PRId64 ") Line %" PRId64 "\n", 
+                                 result, 
+                                 stack_address, 
+                                 symbol_info->Name, 
+                                 stack_line, 
+                                 call_line);
+#endif
                 result = s;
             }
         }
@@ -1824,7 +1778,7 @@ TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
 #if GENERAL_DEBUG
             if (nbytes > (ts->size - ts->occupied)) {
                 ts->high_water_mark += nbytes;
-                Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %lld\n", ts->high_water_mark);
+                Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %I64d\n", ts->high_water_mark);
                 return heap_allocator(ALLOCATOR_ALLOCATE, nbytes, 0, null, null);
             }
 #else
@@ -1846,7 +1800,7 @@ TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
 #if GENERAL_DEBUG
             if (nbytes > (ts->size - ts->occupied)) {
                 ts->high_water_mark += nbytes;
-                Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %lld\n", ts->high_water_mark);
+                Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %I64d\n", ts->high_water_mark);
                 return heap_allocator(ALLOCATOR_ALLOCATE, nbytes, 0, null, null);
             }
 #else
