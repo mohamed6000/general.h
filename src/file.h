@@ -367,7 +367,7 @@ bool read_entire_file(File file, String *s) {
     if (!s->data) return false;
 
     s64 single_read_length = fread(s->data, 1, (size_t)size, file.os_specific->handle);
-    if ((single_read_length != (size_t)size) && (!feof(file.os_specific->handle))) {
+    if ((single_read_length != size) && (!feof(file.os_specific->handle))) {
         heap_free(s->data);
         *s = {};
         return false;

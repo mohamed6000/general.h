@@ -1373,7 +1373,7 @@ TINYRT_EXTERN char *get_stacktrace(void) {
                 stack_line = line64.LineNumber;
 
 #if COMPILER_GCC
-                char *s = tprint("%s0x%016I64d: %s(%I64d) Line %I64d\n", 
+                char *s = tprint("%s0x%016I64u: %s(%I64d) Line %I64d\n", 
                                  result, 
                                  stack_address, 
                                  symbol_info->Name, 
@@ -1464,16 +1464,19 @@ TINYRT_EXTERN void *heap_allocator(Allocator_Mode mode, s64 size, s64 old_size, 
 void write_string(const char *s, bool to_standard_error) {
     int handle = to_standard_error ? STDERR_FILENO : STDOUT_FILENO;
     ssize_t written = write(handle, s, string_length(s));
+    UNUSED(written);
 }
 
 void write_string(const char *s, u32 count, bool to_standard_error) {
     int handle = to_standard_error ? STDERR_FILENO : STDOUT_FILENO;
     ssize_t written = write(handle, s, count);
+    UNUSED(written);
 }
 
 void write_string(String s, bool to_standard_error) {
     int handle = to_standard_error ? STDERR_FILENO : STDOUT_FILENO;
     ssize_t written = write(handle, s.data, s.count);
+    UNUSED(written);
 }
 
 static const char *ansi_system_console_text_colors[SYSTEM_TEXT_COUNT] = {
@@ -1660,6 +1663,10 @@ TINYRT_EXTERN void print(const char *fmt, ...) {
 }
 
 TINYRT_EXTERN bool tinyrt_abort_error_message(const char *title, const char *message, const char *details) {
+    UNUSED(title);
+    UNUSED(message);
+    UNUSED(details);
+
     fflush(stderr);
     return true;
 }
@@ -1684,16 +1691,22 @@ TINYRT_EXTERN char *get_stacktrace(void) {
         if (symbols) {
             for (int index = 0; index < frames; index++) {
                 void *stack_address = stack[index];
-                char *symbol = symbols[index];
 
                 // @Todo: line numbers...
                 s64 stack_line = 0;
                 s64 call_line  = 0;
 
-                print("0x%016" PRIXPTR ": %s(%" PRId64 ") Line %" PRId64 "\n", 
-                      stack_address, 
+#if COMPILER_GCC
+                print("0x%016zu: %s(%ld) Line %ld\n", 
+                      (size_t)stack_address, 
                       symbols[index], 
                       stack_line, call_line);
+#else
+                print("0x%016" PRIXPTR ": %s(%" PRId64 ") Line %" PRId64 "\n", 
+                      (size_t)stack_address, 
+                      symbols[index], 
+                      stack_line, call_line);
+#endif
             }
 
             free(symbols);
@@ -1778,7 +1791,12 @@ TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
 #if GENERAL_DEBUG
             if (nbytes > (ts->size - ts->occupied)) {
                 ts->high_water_mark += nbytes;
+
+#if OS_WINDOWS && COMPILER_GCC
                 Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %I64d\n", ts->high_water_mark);
+#else
+                Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %" PRId64 "\n", ts->high_water_mark);
+#endif
                 return heap_allocator(ALLOCATOR_ALLOCATE, nbytes, 0, null, null);
             }
 #else
@@ -1800,7 +1818,11 @@ TINYRT_EXTERN ALLOCATOR_PROC(temporary_storage_proc) {
 #if GENERAL_DEBUG
             if (nbytes > (ts->size - ts->occupied)) {
                 ts->high_water_mark += nbytes;
+#if OS_WINDOWS && COMPILER_GCC
                 Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %I64d\n", ts->high_water_mark);
+#else
+                Log(LOG_MINIMAL, "Temporary_Storage", "Attempting to allocate from the heap, highest water mark: %" PRId64 "\n", ts->high_water_mark);
+#endif
                 return heap_allocator(ALLOCATOR_ALLOCATE, nbytes, 0, null, null);
             }
 #else
