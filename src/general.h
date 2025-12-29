@@ -579,8 +579,7 @@ typedef enum Log_Mode {
     LOG_VERBOSE,
 } Log_Mode;
 
-#define LOGGER_PROC(name) void name(Log_Mode mode, const char *ident, const char *message, ...)
-typedef LOGGER_PROC(Logger_Proc) IS_PRINTF_LIKE(3, 4);
+typedef void Logger_Proc(Log_Mode mode, const char *ident, const char *message, ...) IS_PRINTF_LIKE(3, 4);
 
 extern thread_var Logger_Proc *current_logger;
 
@@ -666,7 +665,7 @@ TINYRT_EXTERN char *tprint_valist(const char *fmt, va_list arg_list);
 
 TINYRT_EXTERN void print(const char *fmt, ...) IS_PRINTF_LIKE(1, 2);
 
-inline LOGGER_PROC(default_logger) {
+inline void default_logger(Log_Mode mode, const char *ident, const char *message, ...) {
     UNUSED(mode);
 
     if (ident) {
@@ -679,7 +678,7 @@ inline LOGGER_PROC(default_logger) {
     write_string("\n");
 }
 
-inline LOGGER_PROC(error_logger) {
+inline void error_logger(Log_Mode mode, const char *ident, const char *message, ...) {
     UNUSED(mode);
 
     if (ident) {
