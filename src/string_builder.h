@@ -43,7 +43,7 @@ void sb_append(String_Builder *sb, const char *s);
 void sb_append(String_Builder *sb, const char *s, s64 count);
 void sb_append(String_Builder *sb, u8 byte);
 
-void sb_print(String_Builder *sb, const char *fmt, ...);
+void sb_print(String_Builder *sb, const char *fmt, ...) IS_PRINTF_LIKE(2, 3);
 
 char *to_string(String_Builder *sb, Allocator allocator = {heap_allocator, null});
 
