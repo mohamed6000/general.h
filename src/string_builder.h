@@ -20,28 +20,29 @@
 const s64 SB_BLOCK_SIZE_DEFAULT = 4096;
 
 typedef struct String_Buffer {
+    u8 data[SB_BLOCK_SIZE_DEFAULT];
     s64 count;
     s64 occupied;
-    u8 *data;
     String_Buffer *next;
 } String_Buffer;
 
 typedef struct String_Builder {
     String_Buffer *current_buffer;
     String_Buffer *start;
-
-    s64 buffer_size;
     s64 count;
-
     Allocator allocator;
 } String_Builder;
 
-void sb_init(String_Builder *sb, s64 buffer_size = SB_BLOCK_SIZE_DEFAULT, Allocator allocator = {heap_allocator, null});
+void sb_init(String_Builder *sb, Allocator allocator = {heap_allocator, null});
 void sb_reset(String_Builder *sb);
 
 void sb_append(String_Builder *sb, const char *s);
 void sb_append(String_Builder *sb, const char *s, s64 count);
 void sb_append(String_Builder *sb, u8 byte);
+
+inline void sb_append(String_Builder *sb, String s) {
+    sb_append(sb, (char *)s.data, s.count);
+}
 
 void sb_print(String_Builder *sb, const char *fmt, ...) IS_PRINTF_LIKE(2, 3);
 
@@ -55,9 +56,8 @@ void sb_free_buffers(String_Builder *sb);
 
 #ifdef STRING_BUILDER_IMPLEMENTATION
 
-void sb_init(String_Builder *sb, s64 buffer_size, Allocator allocator) {
+void sb_init(String_Builder *sb, Allocator allocator) {
     sb->current_buffer = null;
-    sb->buffer_size = buffer_size;
     sb->count = 0;
 
     if (!allocator.proc) {
@@ -70,10 +70,9 @@ void sb_init(String_Builder *sb, s64 buffer_size, Allocator allocator) {
     if (!sb->start) return;
 
     // Init string buffer.
-    sb->start->count = buffer_size;
+    sb->start->count    = SB_BLOCK_SIZE_DEFAULT;
     sb->start->occupied = 0;
-    sb->start->data = NewArray(u8, buffer_size, sb->allocator);
-    sb->start->next = null;
+    sb->start->next     = null;
 
     sb->current_buffer = sb->start;
 }
@@ -86,16 +85,13 @@ void sb_reset(String_Builder *sb) {
     sb->count = 0;
 }
 
-inline void sb_grow_buffer(String_Builder *sb, s64 bytes) {
+inline void sb_grow_buffer(String_Builder *sb) {
     String_Buffer *new_buffer = New(String_Buffer, sb->allocator);
 
-    bytes = Max(bytes, sb->buffer_size);
-
     // Init string buffer.
-    new_buffer->count = bytes;
+    new_buffer->count    = SB_BLOCK_SIZE_DEFAULT;
     new_buffer->occupied = 0;
-    new_buffer->data = NewArray(u8, bytes, sb->allocator);
-    new_buffer->next = null;
+    new_buffer->next     = null;
 
     sb->current_buffer->next = new_buffer;
     sb->current_buffer = new_buffer;
@@ -108,9 +104,10 @@ void sb_append(String_Builder *sb, const char *s) {
     if (!s) return;
 
     s64 count = string_length(s);
+    assert(count <= SB_BLOCK_SIZE_DEFAULT);
 
     if ((sb->current_buffer->count - sb->current_buffer->occupied) < count) {
-        sb_grow_buffer(sb, count);
+        sb_grow_buffer(sb);
     }
 
     u8 *dest = sb->current_buffer->data + sb->current_buffer->occupied;
@@ -121,14 +118,14 @@ void sb_append(String_Builder *sb, const char *s) {
 }
 
 void sb_append(String_Builder *sb, const char *s, s64 count) {
+    assert(count <= SB_BLOCK_SIZE_DEFAULT);
     if (!count) return;
 
     if ((sb->current_buffer->count - sb->current_buffer->occupied) < count) {
-        sb_grow_buffer(sb, count);
+        sb_grow_buffer(sb);
     }
 
     u8 *dest = sb->current_buffer->data + sb->current_buffer->occupied;
-    // @Todo: Loop over for x86 when the count is larger than MAX_U32.
     memcpy(dest, s, (umm)count);
 
     sb->current_buffer->occupied += count;
@@ -137,7 +134,7 @@ void sb_append(String_Builder *sb, const char *s, s64 count) {
 
 void sb_append(String_Builder *sb, u8 byte) {
     if ((sb->current_buffer->count - sb->current_buffer->occupied) < 1) {
-        sb_grow_buffer(sb, 1);
+        sb_grow_buffer(sb);
     }
 
     sb->current_buffer->data[sb->current_buffer->occupied] = byte;
@@ -181,12 +178,10 @@ void sb_free_buffers(String_Builder *sb) {
 
     String_Buffer *it = sb->start;
     while (it) {
-        String_Buffer *next = it->next;
+        String_Buffer *to_remove = it;
+        sb->allocator.proc(ALLOCATOR_FREE, 0, 0, to_remove, sb->allocator.data);
 
-        sb->allocator.proc(ALLOCATOR_FREE, 0, 0, it->data, sb->allocator.data);
-        sb->allocator.proc(ALLOCATOR_FREE, 0, 0, it, sb->allocator.data);
-
-        it = next;
+        it = it->next;
     }
     sb->start = null;
 }
