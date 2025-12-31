@@ -179,9 +179,9 @@ void sb_free_buffers(String_Builder *sb) {
     String_Buffer *it = sb->start;
     while (it) {
         String_Buffer *to_remove = it;
-        sb->allocator.proc(ALLOCATOR_FREE, 0, 0, to_remove, sb->allocator.data);
-
         it = it->next;
+        
+        sb->allocator.proc(ALLOCATOR_FREE, 0, 0, to_remove, sb->allocator.data);
     }
     sb->start = null;
 }
