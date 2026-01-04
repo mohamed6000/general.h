@@ -69,6 +69,9 @@ inline bool write_entire_file(const char *name, String s) {
 #ifdef INCLUDE_WINDEFS
 #include "windefs.h"
 #else
+#define UNICODE
+#define _UNICODE
+
 #define WIN32_LEAN_AND_MEAN
 #define VC_EXTRALEAN
 #include <windows.h>
